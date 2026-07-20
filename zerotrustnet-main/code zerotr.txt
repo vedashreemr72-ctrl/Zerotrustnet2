@@ -1,0 +1,270 @@
+import streamlit as st
+import pandas as pd
+from sklearn.ensemble import IsolationForest
+import time
+
+# -------------------------------
+# ⚙️ PAGE SETTINGS (FIRST)
+# -------------------------------
+st.set_page_config(page_title="ZeroTrustNet", layout="wide")
+
+# -------------------------------
+# 🎨 PREMIUM CYBER UI
+# -------------------------------
+st.markdown("""
+<style>
+
+/* 🌌 CYBER BACKGROUND (NOT BLACK, NOT IMAGE) */
+.stApp {
+    background: radial-gradient(circle at center, #0a0f2c, #020617);
+    color: #00ffff;
+}
+
+/* 🔷 GRID LAYER (HACKER STYLE) */
+.stApp::before {
+    content: "";
+    position: fixed;
+    width: 200%;
+    height: 200%;
+    background-image:
+        linear-gradient(rgba(0,255,255,0.15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,255,0.15) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: moveGrid 20s linear infinite;
+    z-index: -1;
+    pointer-events: none;
+}
+
+/* 🔶 GLOW LIGHT (3D EFFECT) */
+.stApp::after {
+    content: "";
+    position: fixed;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(0,255,255,0.2), transparent);
+    animation: glowMove 8s ease-in-out infinite;
+    z-index: -1;
+    pointer-events: none;
+}
+
+/* 🌀 GRID ANIMATION */
+@keyframes moveGrid {
+    from { transform: translate(0,0); }
+    to { transform: translate(-60px, -60px); }
+}
+
+/* 🌊 GLOW MOVEMENT */
+@keyframes glowMove {
+    0% { transform: translate(0,0); }
+    50% { transform: translate(-100px, -100px); }
+    100% { transform: translate(0,0); }
+}
+
+/* 🧊 LOGIN BOX */
+.block-container {
+    background: rgba(0, 0, 10, 0.7);
+    padding: 9rem;
+    border-radius: 20px;
+    backdrop-filter: blur(15px);
+    max-width: 2000px;
+    margin: auto;
+    position: relative;
+    z-index: 1;
+}
+
+/* 🔥 TITLE */
+h1 {
+    font-size: 65px;
+    text-align: center;
+    color: #00ffff;
+    text-shadow: 0 0 20px #00ffff;
+}
+
+/* 🔐 INPUT */
+.stTextInput>div>div>input {
+    background: white;
+    color: black;
+    padding: 12px;
+    font-size: 18px;
+}
+
+/* 🎯 BUTTON */
+.stButton>button {
+    width: 100%;
+    padding: 12px;
+    font-size: 18px;
+}
+
+/* LABEL */
+label {
+    color: #00ffff !important;
+}
+
+/* METRIC EFFECT */
+[data-testid="metric-container"] {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 5px #00f5ff; }
+    50% { box-shadow: 0 0 20px #00f5ff; }
+    100% { box-shadow: 0 0 5px #00f5ff; }
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------
+# 🔐 LOGIN SYSTEM
+# -------------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+
+    st.markdown("<h1>🔐 ZeroTrustNet</h1>", unsafe_allow_html=True)
+
+    # Typing effect
+    text = "Initializing Secure Access..."
+    placeholder = st.empty()
+
+    for i in range(len(text)+1):
+        placeholder.markdown(f"<h3 style='color:#00f5ff;'>{text[:i]}</h3>", unsafe_allow_html=True)
+        time.sleep(0.02)
+
+    st.success("✅ System Ready")
+
+    username = st.text_input("👤 Username")
+    password = st.text_input("🔑 Password", type="password")
+
+    if st.button("🚀 Login"):
+
+        if username == "admin" and password == "1234":
+            st.success("✅ ACCESS GRANTED")
+            st.session_state.logged_in = True
+            st.rerun()
+        else:
+            st.error("❌ ACCESS DENIED")
+
+    st.stop()
+
+# -------------------------------
+# 📌 SIDEBAR
+# -------------------------------
+menu = st.sidebar.selectbox(
+    "Navigation",
+    ["🏠 Home", "📊 Detection", "📈 Analytics", "🔍 Check User"]
+)
+
+# -------------------------------
+# 💻 LIVE LOGS
+# -------------------------------
+logs = [
+    "Connecting to secure server...",
+    "Authenticating user...",
+    "Scanning activity logs...",
+    "Detecting anomalies...",
+    "Applying ML model...",
+    "Monitoring user behavior...",
+    "System secure ✔"
+]
+
+st.subheader("💻 Live System Logs")
+
+log_box = st.empty()
+for log in logs:
+    log_box.write(f"🟢 {log}")
+    time.sleep(0.3)
+
+# -------------------------------
+# 🏠 HOME
+# -------------------------------
+if menu == "🏠 Home":
+
+    st.title("🔐 ZeroTrustNet")
+    st.write("🚀 Insider Threat Detection System")
+    st.info("Use sidebar to navigate")
+
+# -------------------------------
+# 📊 DETECTION
+# -------------------------------
+elif menu == "📊 Detection":
+
+    st.title("📊 Detection Dashboard")
+
+    data = pd.read_csv("data.csv")
+
+    model = IsolationForest(contamination=0.3)
+    data['anomaly'] = model.fit_predict(data[['login_time', 'file_access']])
+    data['Result'] = data['anomaly'].apply(
+        lambda x: "Suspicious" if x == -1 else "Normal"
+    )
+
+    suspicious_users = data[data['Result'] == "Suspicious"]
+
+    col1, col2 = st.columns(2)
+    col1.metric("👥 Total Users", len(data))
+    col2.metric("⚠ Suspicious", len(suspicious_users))
+
+    st.subheader("🚨 Threat Monitoring")
+
+    if len(suspicious_users) > 0:
+        st.error(f"🚨 {len(suspicious_users)} Suspicious Users Detected!")
+    else:
+        st.success("✅ All Users Normal")
+
+    # Highlight suspicious
+    def highlight(row):
+        if row["Result"] == "Suspicious":
+            return ['background-color:red; color:white']*len(row)
+        return ['']*len(row)
+
+    st.subheader("📂 User Data")
+    st.dataframe(data.style.apply(highlight, axis=1))
+
+# -------------------------------
+# 📈 ANALYTICS
+# -------------------------------
+elif menu == "📈 Analytics":
+
+    st.title("📈 Data Analytics")
+
+    data = pd.read_csv("data.csv")
+
+    model = IsolationForest(contamination=0.3)
+    data['anomaly'] = model.fit_predict(data[['login_time', 'file_access']])
+    data['Result'] = data['anomaly'].apply(
+        lambda x: "Suspicious" if x == -1 else "Normal"
+    )
+
+    st.subheader("📊 Login Time")
+    st.bar_chart(data['login_time'])
+
+    st.subheader("📊 Normal vs Suspicious")
+    st.bar_chart(data['Result'].value_counts())
+
+# -------------------------------
+# 🔍 CHECK USER
+# -------------------------------
+elif menu == "🔍 Check User":
+
+    st.title("🔍 Check User Activity")
+
+    login_time = st.number_input("Login Time (0-23)", 0, 23)
+    file_access = st.number_input("File Access Count", 0, 100)
+
+    if st.button("Check"):
+
+        data = pd.read_csv("data.csv")
+
+        model = IsolationForest(contamination=0.3)
+        model.fit(data[['login_time', 'file_access']])
+
+        result = model.predict([[login_time, file_access]])
+
+        if result[0] == -1:
+            st.error("⚠ Suspicious Activity!")
+        else:
+            st.success("✅ Normal Activity")
+
+    st.info("Suspicious if unusual login time or high file access")

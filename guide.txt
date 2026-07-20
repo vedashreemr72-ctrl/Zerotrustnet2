@@ -1,0 +1,402 @@
+I want to build an enterprise-grade cybersecurity platform called ZeroTrustNet.
+
+This is NOT a basic anomaly detection project.
+
+It should simulate a real Zero Trust Security Platform used by organizations to monitor employees continuously after login and help Security Operations Center (SOC) analysts detect insider threats.
+
+The application must look and behave like a commercial cybersecurity product.
+
+===========================================================
+PROJECT GOAL
+===========================================================
+
+Every employee in the organization must use ZeroTrustNet before starting daily work.
+
+After successful authentication, every user session should be continuously monitored.
+
+The system should collect real events generated inside the application instead of creating random or fake values.
+
+Every employee action should be stored as an audit event.
+
+The administrator must have a live dashboard showing all employee activities.
+
+The platform should continuously calculate the employee's risk level based on behavior.
+
+No random values.
+
+No dummy risk scores.
+
+Every decision must be explainable.
+
+===========================================================
+SYSTEM MODULES
+===========================================================
+
+1. Employee Portal
+2. Admin Dashboard
+3. Security Operations Dashboard
+4. Incident Response Center
+5. AI Risk Analysis Engine
+6. User Behaviour Analytics (UEBA)
+7. Zero Trust Policy Engine
+8. Audit Log System
+
+===========================================================
+EMPLOYEE PORTAL
+===========================================================
+
+Employees authenticate before accessing company resources.
+
+Support:
+
+• Username/password
+• Role Based Access Control
+• Employee ID
+• Department
+• Device Registration
+• Browser Identification
+• Session Tracking
+
+Every login creates an immutable audit log.
+
+===========================================================
+CONTINUOUS MONITORING
+===========================================================
+
+Monitor every action performed inside the application.
+
+Examples include:
+
+• Login
+• Logout
+• Failed Login
+• Password Reset
+• Profile Update
+• Sensitive Page Access
+• File Upload
+• File Download
+• Report Export
+• USB Event (if available or simulated clearly)
+• Device Change
+• Browser Change
+• IP Address Change
+• Access to Confidential Resources
+• Privilege Change
+• Repeated Failed Operations
+• Session Duration
+• Multiple Concurrent Sessions
+
+Every event must be timestamped.
+
+Store all events permanently.
+
+===========================================================
+AI + ML MULTI-ALGORITHM ENGINE
+===========================================================
+
+Do not use a single ML model.
+
+Use multiple complementary algorithms.
+
+Examples:
+
+1. Isolation Forest
+Purpose:
+Detect anomalous employee behaviour.
+
+2. Local Outlier Factor (LOF)
+Purpose:
+Find local behavioural outliers.
+
+3. One-Class SVM
+Purpose:
+Detect unknown abnormal behaviour.
+
+4. DBSCAN
+Purpose:
+Discover unusual behavioural clusters.
+
+5. Rule-Based Risk Engine
+Purpose:
+Apply transparent organizational security policies.
+
+6. Behaviour Baseline Engine
+Purpose:
+Compare current behaviour against the employee's historical behaviour instead of comparing all employees together.
+
+The final risk assessment should combine ML outputs and policy evaluation.
+
+Do not invent confidence values.
+
+Use actual model outputs and explain how the final decision is derived.
+
+===========================================================
+RISK ENGINE
+===========================================================
+
+Risk should be based on observable evidence such as:
+
+• Login outside policy
+• Multiple failed logins
+• Access to sensitive resources
+• Behaviour deviation from personal baseline
+• Multiple device changes
+• Excessive downloads
+• Unusual access frequency
+• Multiple concurrent sessions
+• Policy violations
+
+Display:
+
+Risk Score (0–100)
+
+Severity:
+Low
+Medium
+High
+Critical
+
+Every score must include an explanation showing which factors contributed to it.
+
+===========================================================
+EXPLAINABLE AI
+===========================================================
+
+Every alert must include:
+
+Reasons for detection
+
+Evidence
+
+Triggered policies
+
+ML models involved
+
+Recommended administrative action
+
+Never display unexplained alerts.
+
+===========================================================
+ADMIN DASHBOARD
+===========================================================
+
+Professional SOC Dashboard.
+
+Display:
+
+• Employees Online
+• Active Sessions
+• Active Incidents
+• Critical Alerts
+• High Risk Employees
+• Login Trend
+• Behaviour Trend
+• Department Risk
+• Security Score
+• Policy Violations
+• Suspicious Sessions
+• Recently Blocked Users
+
+Everything updates in real time.
+
+===========================================================
+USER TIMELINE
+===========================================================
+
+Every employee should have a timeline.
+
+Example
+
+08:55 Login
+
+09:00 HR Portal
+
+09:07 Payroll Access
+
+09:09 Report Download
+
+09:11 Multiple Failed Access Attempts
+
+09:15 Logout
+
+Admin can replay an entire session.
+
+===========================================================
+INCIDENT MANAGEMENT
+===========================================================
+
+Every suspicious activity becomes an incident.
+
+Each incident contains:
+
+Incident ID
+
+User
+
+Department
+
+Timeline
+
+Evidence
+
+Policies Triggered
+
+Risk Score
+
+Severity
+
+Recommended Action
+
+Current Status
+
+===========================================================
+ZERO TRUST POLICY ENGINE
+===========================================================
+
+Implement configurable policies.
+
+Example:
+
+IF
+
+Unknown Device
+
+AND
+
+Sensitive Resource
+
+AND
+
+Outside Office Hours
+
+THEN
+
+Require Step-Up Authentication
+
+or
+
+Temporarily Restrict Access
+
+Policies should be editable without changing ML models.
+
+===========================================================
+ACCESSIBILITY
+===========================================================
+
+The application must comply with accessibility best practices.
+
+Include:
+
+High contrast mode
+
+Keyboard navigation
+
+Screen reader labels
+
+Color-independent status indicators
+
+Scalable fonts
+
+Responsive design
+
+===========================================================
+UI DESIGN
+===========================================================
+
+Professional enterprise SOC interface.
+
+Dark cyber theme.
+
+Modern cards.
+
+Interactive charts.
+
+Heatmaps.
+
+Risk indicators.
+
+Timelines.
+
+Animated alerts.
+
+Professional typography.
+
+No flashy gaming effects.
+
+===========================================================
+DATA
+===========================================================
+
+Do not generate fake cybersecurity events.
+
+Instead, generate audit events only from real interactions performed inside the application.
+
+Risk analysis should operate on those collected events.
+
+===========================================================
+TECH STACK
+===========================================================
+
+Frontend:
+React
+
+Backend:
+Python Flask
+
+Machine Learning:
+scikit-learn
+
+Database:
+SQLite initially with clear migration path to PostgreSQL
+
+Authentication:
+JWT + Role Based Access
+
+Charts:
+Plotly
+
+===========================================================
+CODE QUALITY
+===========================================================
+
+Build using modular architecture.
+
+Separate:
+
+Frontend
+
+Backend
+
+ML Engine
+
+Policy Engine
+
+Database
+
+Authentication
+
+Dashboard
+
+Use clean folder structure.
+
+Generate production-quality code.
+
+Implement one feature completely before moving to the next.
+
+Do not skip functionality.
+
+Do not use placeholders unless clearly marked.
+
+
+
+
+
+use clear buttons and more realistic 
+
+
+
+i should implement in the organization 
+so don't generate random data values
+
+include admin and employee dashboard 
+each can login individually

@@ -1,0 +1,111 @@
+ZEROTRUSTNET:A Multi-algorithmic framework for insider threat detection using behavioral deviation analysisTeam : Vaibhavi Vilas Pednekar(1AM23CS234)
+
+Vedashree M R(1AM23CS237)
+
+Vijet Ningappa Sangam(1AM23CS240)
+
+Yashaswini S(1AM23CS24)
+
+ABSTRACT•Insider threats are a major security issue as they come from trusted users inside the system.
+
+•Traditional security systems fail because they depend on fixed rules and signatures.
+
+•ZeroTrustNet uses Machine Learning to detect threats based on user behavior.
+
+•The system analyzes activities like login time and file access using the Isolation Forest algorithm.
+
+•It identifies abnormal behavior and classifies users as normal or suspicious.
+
+•Provides real-time alerts, dashboard, and improves accuracy while reducing false alarms.PROBLEM STATEMENT•Insider threats are increasing in organizations due to misuse of authorized access.
+
+•Existing security systems focus mainly on external attacks and ignore internal threats.
+
+•Traditional methods rely on fixed rules, making them ineffective for detecting abnormal behavior.
+
+•Difficulty in identifying suspicious activities in real-time.
+
+•High chances of false alarms or missed threats.
+
+•Need for an intelligent system to monitor user behavior and detect anomalies efficiently.OBJECTIVES•To develop a system for detecting insider threats in organizations.
+
+•To analyze user behavior such as login time and file access.
+
+•To use Machine Learning (Isolation Forest) for anomaly detection.
+
+•To classify users as normal or suspicious based on behavior.
+
+•To provide real-time alerts for suspicious activities.
+
+•To create a dashboard for monitoring and analysis.Literature survey•Rule-based systems are widely used but fail to detect dynamic insider threats. (Sommer & Paxson, 2010)
+
+•Machine Learning improves intrusion detection compared to traditional methods. (Sommer & Paxson, 2010)
+
+•Isolation Forest is efficient for detecting anomalies in large datasets. (Liu et al., 2008)
+
+•Support Vector Machine is used for classification of normal and abnormal behavior. (Chandola et al., 2009)
+
+•Behavior-based analysis helps in identifying insider threats effectively. (Eberle & Holder, 2009)•Neural Networks can detect complex patterns in user activity. (Kim et al., 2016)
+
+•Anomaly detection techniques reduce dependency on predefined rules. (Chandola et al., 2009)
+
+•Insider threat detection requires continuous monitoring of user behavior. (Greitzer & Frincke, 2010)
+
+•Existing systems suffer from high false positive rates. (Legg et al., 2017)
+
+•Real-time detection systems are needed for better security response. (Tuor et al., 2017)Methodology•Collect user activity data (login time, file access).
+
+•Preprocess and organize the data for analysis.
+
+•Apply Isolation Forest algorithm.
+
+•Detect anomalies based on behavioral deviation.
+
+•Classify users as Normal or Suspicious.
+
+•Display results using dashboard (alerts, charts, monitoring).Architecture diagram•User Activity Data
+
+• (Login Time, File Access)
+
+• ↓
+
+• Data Collection
+
+• ↓
+
+• Data Preprocessing
+
+• ↓
+
+• Machine Learning Model
+
+• (Isolation Forest)
+
+• ↓
+
+• Anomaly Detection
+
+• ↓
+
+• Classification
+
+• (Normal / Suspicious)
+
+• ↓
+
+• Dashboard & Alerts
+
+• (Graphs, Monitoring, Alerts)Reference•Isolation Forest (Liu et al., 2008) https://ieeexplore.ieee.org/document/4781136
+
+•Anomaly Detection Survey (Chandola et al., 2009) https://ieeexplore.ieee.org/document/4781136
+
+•Machine Learning in Intrusion Detection (Sommer & Paxson, 2010) https://ieeexplore.ieee.org/document/5504793
+
+•Insider Threat Detection (Eberle & Holder, 2009) https://link.springer.com/chapter/10.1007/978-3-642-04441-0_6
+
+•Behavioral Cyber Security (Greitzer & Frincke, 2010) https://ieeexplore.ieee.org/document/5631717
+
+•Hybrid Intrusion Detection (Kim et al., 2016) https://ieeexplore.ieee.org/document/7838918
+
+•Insider Threat Detection System (Legg et al., 2017) https://ieeexplore.ieee.org/document/7958578
+
+•Deep Learning for Insider Threats (Tuor et al., 2017) https://arxiv.org/abs/1710.00811
