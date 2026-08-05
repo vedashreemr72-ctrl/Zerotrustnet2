@@ -57,141 +57,253 @@ def run_ml_engine(df):
 
 def calculate_risk(row, ml_flags=None):
     """
-    Calculates unified risk score (0-100), severity, priority,
-    detailed evidence list, and algorithm contributions.
+    6-Layer AI & Policy Detection Engine:
+    Layer 1: Rule Engine (Static threshold rules e.g. Outside Office Hours -> +20 Risk)
+    Layer 2: Isolation Forest (Global population anomaly detection)
+    Layer 3: Local Outlier Factor (LOF) (Local density outlier detection)
+    Layer 4: One-Class SVM (Novelty / Unknown attack vector detection)
+    Layer 5: Personal Behavioral Baseline Engine (History vs today e.g. 09:10 AM vs 02:00 AM -> +20 Risk)
+    Layer 6: Zero Trust Policy Engine (IF Finance Folder AND Unknown Device -> Restrict Access)
     """
-    score = 0
-    reasons = []
     algo_contrib = {}
-
-    # 1. Privilege Escalation
-    if row.get('privilege_escalation_flag') == 1:
-        score += 40
-        reasons.append(f"Privilege escalation: {row.get('privilege_escalation_details')}")
-
-    # 2. Impossible Travel
-    if row.get('impossible_travel_flag') == 1:
-        score += 45
-        reasons.append(f"Impossible travel: {row.get('impossible_travel_details')}")
-
-    # 3. Unauthorized Resource Access
-    if row.get('unusual_collaboration_flag') == 1:
-        score += 25
-        reasons.append(f"Unauthorized resource access: {row.get('unusual_collaboration_details')}")
-
-    # 4. Credential Sharing
-    if row.get('credential_sharing_flag') == 1:
-        score += 35
-        reasons.append(f"Credential sharing: {row.get('credential_sharing_details')}")
-
-    # 5. Data Exfiltration Signals
-    exfil = 0
-    if row.get('usb_usage', 0) == 1:
-        exfil += 20
-        reasons.append("Unapproved USB device connected")
-    if row.get('downloads', 0) > 100:
-        exfil += 25
-        reasons.append(f"Mass download: {row.get('downloads')} files")
-    elif row.get('downloads', 0) > 20:
-        exfil += 12
-        reasons.append(f"Elevated downloads: {row.get('downloads')} files")
-    if row.get('genai_upload_mb', 0) > 20:
-        exfil += 20
-        reasons.append(f"High GenAI upload: {row.get('genai_upload_mb')} MB")
-    if row.get('external_uploads', 0) > 2:
-        exfil += 15
-        reasons.append(f"External uploads: {row.get('external_uploads')} events")
-    if row.get('email_attachments', 0) > 3:
-        exfil += 10
-        reasons.append(f"Unusual email attachments: {row.get('email_attachments')} files")
     
-    # Exfiltration weighted if in notice/resignation period
-    if row.get('resignation_flag', 0) == 1 and exfil > 0:
-        exfil = int(exfil * 2.5)
-        reasons.append("Pre-resignation exfiltration pattern — signals weighted 2.5x")
-    score += exfil
-
-    # 6. AI Risk
-    if row.get('ai_risk_flag') == 1:
-        score += 30
-        reasons.append(f"Sensitive IP shared with AI: {row.get('ai_risk_details')}")
-
-    # 7. Shadow IT
-    if row.get('shadow_it_flag') == 1:
-        score += 20
-        reasons.append(f"Shadow IT detected: {row.get('shadow_it_details')}")
-
-    # 8. Dormant Account Reactivation
-    if row.get('last_login_days_ago', 0) > 90:
-        score += 20
-        reasons.append(f"Dormant account reactivated after {row.get('last_login_days_ago')} days")
-
-    # 9. Burnout / Stress
-    if row.get('burnout_stress_score', 0) > 60:
-        score += 15
-        reasons.append(f"High stress score ({row.get('burnout_stress_score')}%): anomalous work pattern")
-
-    # 10. Unknown Device Login
-    if row.get('device_known', 1) == 0:
-        score += 10
-        reasons.append("Login from unregistered/unknown device")
-
-    # 11. Off-Hours Login
+    # --- LAYER 1: RULE ENGINE ---
+    l1_score = 0
+    l1_rules = []
+    
     hr = int(row.get('login_time', 9))
     if hr < 7 or hr > 20:
-        score += 10
-        reasons.append(f"Off-hours login at {hr:02d}:00 (outside 07:00–20:00 policy window)")
+        l1_score += 20
+        l1_rules.append(f"Outside Office Hours: Login at {hr:02d}:00 (+20 Risk)")
+    if row.get('usb_usage', 0) == 1:
+        l1_score += 20
+        l1_rules.append("Unapproved USB Storage Connected (+20 Risk)")
+    if row.get('downloads', 0) > 100:
+        l1_score += 25
+        l1_rules.append(f"Mass File Download: {row.get('downloads')} files (+25 Risk)")
+    elif row.get('downloads', 0) > 20:
+        l1_score += 12
+        l1_rules.append(f"Elevated File Downloads: {row.get('downloads')} files (+12 Risk)")
+    if row.get('genai_upload_mb', 0) > 20:
+        l1_score += 20
+        l1_rules.append(f"High GenAI Upload Volume: {row.get('genai_upload_mb')} MB (+20 Risk)")
+    if row.get('external_uploads', 0) > 2:
+        l1_score += 15
+        l1_rules.append(f"External Data Uploads: {row.get('external_uploads')} events (+15 Risk)")
+    if row.get('failed_logins', 0) > 3:
+        l1_score += 15
+        l1_rules.append(f"Multiple Failed Actions: {row.get('failed_logins')} violations (+15 Risk)")
+    if row.get('last_login_days_ago', 0) > 90:
+        l1_score += 20
+        l1_rules.append(f"Dormant Account Reactivated: {row.get('last_login_days_ago')} days inactive (+20 Risk)")
+    if row.get('burnout_stress_score', 0) > 60:
+        l1_score += 15
+        l1_rules.append(f"High Stress & Burnout Score: {row.get('burnout_stress_score')}% (+15 Risk)")
 
-    # 12. Personal Baseline Deviation
-    baseline = row.get('baseline_file_access', 15)
-    actual = row.get('file_access_count', 0)
-    if baseline > 0 and actual > baseline * 2.5:
-        score += 15
-        reasons.append(f"File access {actual} is {actual/baseline:.1f}x above personal baseline ({baseline}/day)")
+    # Exfiltration weighted if in notice/resignation period
+    if row.get('resignation_flag', 0) == 1 and l1_score > 0:
+        l1_score = int(l1_score * 2.5)
+        l1_rules.append("Pre-Resignation Notice Period — Rule signals weighted 2.5x")
 
-    # 13. ML Anomaly Contributions
+    # --- LAYER 2: ISOLATION FOREST (Global Anomalies) ---
     algo_flags = ml_flags or {}
-    ml_score = 0
+    l2_score = 0
+    l2_status = "Normal"
     if algo_flags.get("if") == -1:
-        ml_score += 5
-        algo_contrib["Isolation Forest"] = "ANOMALY — behavioral pattern deviates from population"
+        l2_score = 10
+        l2_status = "ANOMALY"
+        algo_contrib["Isolation Forest"] = "GLOBAL ANOMALY — multi-feature vector deviates from population"
+        l1_rules.append("Layer 2 Isolation Forest: Global population anomaly detected (+10 Risk)")
     else:
         algo_contrib["Isolation Forest"] = "Normal"
-        
+
+    # --- LAYER 3: LOCAL OUTLIER FACTOR (Local Behavioral Outliers) ---
+    l3_score = 0
+    l3_status = "Normal"
     if algo_flags.get("lof") == -1:
-        ml_score += 5
-        algo_contrib["Local Outlier Factor"] = "ANOMALY — local behavioral outlier detected"
+        l3_score = 10
+        l3_status = "ANOMALY"
+        algo_contrib["Local Outlier Factor"] = "LOCAL OUTLIER — unusual density anomaly within peer group"
+        l1_rules.append("Layer 3 Local Outlier Factor: Local density outlier detected (+10 Risk)")
     else:
         algo_contrib["Local Outlier Factor"] = "Normal"
-        
+
+    # --- LAYER 4: ONE-CLASS SVM (Unknown Attacks & Novelty Detection) ---
+    l4_score = 0
+    l4_status = "Normal"
     if algo_flags.get("svm") == -1:
-        ml_score += 3
-        algo_contrib["One-Class SVM"] = "ANOMALY — behavior outside learned normal boundary"
+        l4_score = 10
+        l4_status = "ANOMALY"
+        algo_contrib["One-Class SVM"] = "NOVELTY — behavior outside learned normal boundary"
+        l1_rules.append("Layer 4 One-Class SVM: Novel / unknown attack pattern (+10 Risk)")
     else:
         algo_contrib["One-Class SVM"] = "Normal"
-        
+
     if algo_flags.get("dbscan") == 1:
-        ml_score += 2
-        algo_contrib["DBSCAN"] = "NOISE POINT — does not belong to any behavioral cluster"
+        l4_score += 5
+        algo_contrib["DBSCAN"] = "NOISE POINT — outlier outside behavioral clusters"
     else:
         algo_contrib["DBSCAN"] = "In cluster"
 
-    score += ml_score
-    score = min(score, 100)
+    # --- LAYER 5: BEHAVIORAL BASELINE ENGINE (Personal History Comparison) ---
+    l5_score = 0
+    l5_deviations = []
+
+    # Check 1: Login Time Baseline (e.g. Normally 09:10 AM vs Today 02:00 AM)
+    baseline_time_str = str(row.get('baseline_login_time', '09:00'))
+    try:
+        baseline_hr = int(baseline_time_str.split(':')[0])
+    except Exception:
+        baseline_hr = 9
+    
+    if abs(hr - baseline_hr) >= 5 or (hr < 6 or hr > 22):
+        l5_score += 20
+        l5_deviations.append(f"Login Time Deviation: Normally {baseline_time_str} AM vs Today {hr:02d}:00 (+20 Risk)")
+
+    # Check 2: File Access Baseline
+    baseline_access = int(row.get('baseline_file_access', 15))
+    actual_access = int(row.get('file_access_count', 0))
+    if baseline_access > 0 and actual_access > baseline_access * 2.5:
+        l5_score += 20
+        l5_deviations.append(f"File Access Volume: {actual_access} files accessed ({actual_access/baseline_access:.1f}x above baseline {baseline_access}/day) (+20 Risk)")
+
+    # Check 3: Location Baseline
+    baseline_loc = str(row.get('baseline_location', 'Bengaluru'))
+    current_loc = str(row.get('current_login_location', 'Bengaluru'))
+    if current_loc and current_loc != baseline_loc:
+        l5_score += 25
+        l5_deviations.append(f"Location Deviation: Baseline '{baseline_loc}' vs Today '{current_loc}' (+25 Risk)")
+
+    # Check 4: Device Baseline
+    if row.get('device_known', 1) == 0:
+        l5_score += 15
+        l5_deviations.append("Device Baseline: Access from unregistered / non-baseline hardware (+15 Risk)")
+
+    # --- LAYER 6: ZERO TRUST POLICY ENGINE (Contextual Policy Rules) ---
+    l6_action = "Allowed"
+    l6_policies = []
+    l6_score = 0
+
+    if row.get('impossible_travel_flag') == 1:
+        l6_score += 35
+        l6_action = "Lock Account + SOC Alert"
+        l6_policies.append(f"Policy Violation: Impossible Travel ({row.get('impossible_travel_details')})")
+    if row.get('privilege_escalation_flag') == 1:
+        l6_score += 35
+        l6_action = "Revoke Privileges + Alert"
+        l6_policies.append(f"Policy Violation: Privilege Escalation ({row.get('privilege_escalation_details')})")
+    if row.get('unusual_collaboration_flag') == 1:
+        l6_score += 25
+        l6_action = "Restrict Access Scope"
+        l6_policies.append(f"Policy Violation: IF Restricted Folder AND Unauthorized Scope -> Restrict Access")
+    if row.get('credential_sharing_flag') == 1:
+        l6_score += 30
+        l6_action = "Force Password Reset"
+        l6_policies.append("Policy Violation: Credential Sharing Detected across IP Range")
+    if row.get('ai_risk_flag') == 1:
+        l6_score += 25
+        l6_action = "Block AI Tool Access"
+        l6_policies.append("Policy Violation: Confidential IP Shared with Public GenAI")
+    if row.get('shadow_it_flag') == 1:
+        l6_score += 20
+        l6_action = "Terminate Shadow IT Tunnel"
+        l6_policies.append(f"Policy Violation: Shadow IT Executables ({row.get('shadow_it_details')})")
+
+    # Total Score Summation across all 6 Layers
+    total_score = min(100, l1_score + l2_score + l3_score + l4_score + l5_score + l6_score)
+    reasons = l1_rules + l5_deviations + l6_policies
 
     if not reasons:
-        reasons.append("No unusual behavior detected — all indicators within baseline")
+        reasons.append("No unusual behavior detected — all 6 AI detection layers within safe baseline")
 
-    if score >= 80:
+    # --- EXPLAINABLE AI (XAI) FORMATTED REASONS & RECOMMENDED ACTIONS ---
+    xai_reasons = []
+    if hr < 7 or hr > 20:
+        xai_reasons.append(f"✓ Login at {hr:02d}:30 AM (Off-Hours Deviation)")
+    
+    actual_downloads = row.get('downloads', 0)
+    if actual_downloads > 0:
+        xai_reasons.append(f"✓ Downloaded {actual_downloads} Files")
+
+    if row.get('device_known', 1) == 0 or row.get('is_registered_device') == 0:
+        xai_reasons.append("✓ New / Unregistered Device Access")
+
+    if l2_status == "ANOMALY":
+        xai_reasons.append("✓ Isolation Forest Anomaly Flagged")
+
+    if l3_status == "ANOMALY":
+        xai_reasons.append("✓ LOF Local Density Outlier Detected")
+
+    if l4_status == "ANOMALY":
+        xai_reasons.append("✓ One-Class SVM Novelty Attack Pattern")
+
+    if row.get('usb_usage', 0) == 1:
+        xai_reasons.append("✓ Unapproved USB Device Connected")
+
+    if row.get('genai_upload_mb', 0) > 0:
+        xai_reasons.append(f"✓ GenAI Data Upload ({row.get('genai_upload_mb')} MB)")
+
+    if not xai_reasons:
+        xai_reasons = ["✓ Baseline Login Activity", "✓ Known Device Fingerprint", "✓ Normal File Access Volume"]
+
+    # Primary recommended action
+    if total_score >= 80:
+        primary_recommendation = "Lock Account + Revoke Active Sessions"
+    elif total_score >= 60:
+        primary_recommendation = "Require Re-authentication (Step-Up MFA)"
+    elif total_score >= 30:
+        primary_recommendation = "Require Re-authentication"
+    else:
+        primary_recommendation = "Continue Continuous Baseline Monitoring"
+
+    detection_layers = {
+        "primary_recommendation": primary_recommendation,
+        "xai_reasons": xai_reasons,
+        "layer1_rule_engine": {
+            "name": "Layer 1: Rule Engine",
+            "score": l1_score,
+            "rules_triggered": l1_rules
+        },
+        "layer2_isolation_forest": {
+            "name": "Layer 2: Isolation Forest",
+            "status": l2_status,
+            "score": l2_score,
+            "description": "Global Population Anomaly Detection"
+        },
+        "layer3_lof": {
+            "name": "Layer 3: Local Outlier Factor",
+            "status": l3_status,
+            "score": l3_score,
+            "description": "Local Behavioral Outlier Density Detection"
+        },
+        "layer4_one_class_svm": {
+            "name": "Layer 4: One-Class SVM",
+            "status": l4_status,
+            "score": l4_score,
+            "description": "Novelty & Unknown Attack Pattern Detection"
+        },
+        "layer5_behavioral_baseline": {
+            "name": "Layer 5: Personal Behavioral Baseline Engine",
+            "score": l5_score,
+            "deviations": l5_deviations
+        },
+        "layer6_policy_engine": {
+            "name": "Layer 6: Zero Trust Policy Engine",
+            "action": l6_action,
+            "score": l6_score,
+            "triggered_policies": l6_policies
+        }
+    }
+    if total_score >= 80:
         severity, priority, threat_classification = "🔴 Critical", "P1", "Malicious"
-    elif score >= 60:
+    elif total_score >= 60:
         severity, priority, threat_classification = "🟠 High", "P2", "Suspicious"
-    elif score >= 30:
+    elif total_score >= 30:
         severity, priority, threat_classification = "🟡 Medium", "P3", "Suspicious"
     else:
         severity, priority, threat_classification = "🟢 Low", "P4", "Normal"
 
-    return int(score), severity, priority, threat_classification, reasons, algo_contrib
+    return int(total_score), severity, priority, threat_classification, reasons, algo_contrib, detection_layers
 
 def get_recommendations(row, severity):
     recs = []

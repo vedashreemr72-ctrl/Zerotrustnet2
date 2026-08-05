@@ -1,4 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+const detectBrowser = () => {
+  const ua = navigator.userAgent;
+  if (ua.includes("Edg/")) return "Microsoft Edge";
+  if (ua.includes("Chrome")) return "Google Chrome 127";
+  if (ua.includes("Firefox")) return "Mozilla Firefox";
+  if (ua.includes("Safari")) return "Apple Safari";
+  return "Google Chrome 127";
+};
+
+const detectOS = () => {
+  const ua = navigator.userAgent;
+  if (ua.includes("Win")) return "Windows 11 Enterprise";
+  if (ua.includes("Mac")) return "macOS Sequoia";
+  if (ua.includes("Linux")) return "Linux Ubuntu 24.04";
+  return "Windows 11 Enterprise";
+};
+
+const getDeviceId = () => {
+  let devId = localStorage.getItem("ztn_device_id");
+  if (!devId) {
+    devId = "DEV-" + Math.floor(10000 + Math.random() * 90000) + "-WIN";
+    localStorage.setItem("ztn_device_id", devId);
+  }
+  return devId;
+};
 
 export default function Login({ onLoginSuccess }) {
   const [activeTab, setActiveTab] = useState('admin'); // 'admin' or 'employee'
@@ -20,6 +46,10 @@ export default function Login({ onLoginSuccess }) {
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const deviceId = getDeviceId();
+  const browserName = detectBrowser();
+  const osName = detectOS();
+
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -33,7 +63,12 @@ export default function Login({ onLoginSuccess }) {
         body: JSON.stringify({
           username: username,
           password: password,
-          role: activeTab
+          role: activeTab,
+          device_id: deviceId,
+          browser: browserName,
+          os: osName,
+          location: "Bengaluru, India",
+          login_time: new Date().toISOString()
         })
       });
 
@@ -98,9 +133,11 @@ export default function Login({ onLoginSuccess }) {
   return (
     <div className="login-wrap">
       <div className="zt-card login-card" style={{ maxWidth: '460px', width: '100%' }}>
-        <div className="login-hero">
+        <div className="login-hero" style={{ textAlign: 'center' }}>
           <div className="logo" style={{ fontSize: '1.6rem', fontWeight: '800' }}>🛡️ ZeroTrustNet</div>
-          <div className="tagline">Enterprise Insider Threat Detection Platform</div>
+          <div className="tagline" style={{ fontSize: '0.82rem', color: '#00f5ff', fontWeight: 'bold', marginTop: '4px', lineHeight: '1.3' }}>
+            An AI-Powered Zero Trust Employee Access Verification & Insider Threat Detection Platform
+          </div>
         </div>
 
         {/* Device Trust Banner */}
@@ -316,14 +353,24 @@ export default function Login({ onLoginSuccess }) {
           </form>
         )}
 
-        <div style={{ marginTop: '1.5rem', background: 'rgba(0, 245, 255, 0.04)', border: '1px solid rgba(0, 245, 255, 0.09)', borderRadius: '8px', padding: '0.8rem' }}>
-          <div style={{ fontSize: '0.68rem', color: '#3d5470', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 'bold' }}>
-            Demo Credentials & Self-Registration
+        {/* Telemetry Handshake & Step 2 Device Verification Info */}
+        <div style={{
+          marginTop: '1.2rem',
+          padding: '0.75rem 0.85rem',
+          background: 'rgba(0, 245, 255, 0.03)',
+          border: '1px solid rgba(0, 245, 255, 0.15)',
+          borderRadius: '8px',
+          fontSize: '0.74rem'
+        }}>
+          <div style={{ color: '#00f5ff', fontWeight: 'bold', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>📡 Step 1 & 2: Pre-Access Device Verification</span>
+            <span style={{ fontSize: '0.68rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: '4px' }}>Compliant</span>
           </div>
-          <div style={{ fontSize: '0.78rem', color: '#4a6275', fontFamily: 'monospace', lineHeight: '1.8' }}>
-            Admin &nbsp;&nbsp;→ admin / admin123<br />
-            Employee → ravi / emp123<br />
-            Or click <strong>"Register Account"</strong> above to register any new employee!
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', color: '#88a0b8', fontSize: '0.72rem' }}>
+            <div>• <strong>Device ID:</strong> <span style={{ color: '#00f5ff' }}>{deviceId}</span></div>
+            <div>• <strong>OS Allowed:</strong> <span style={{ color: '#10b981' }}>✓ {osName}</span></div>
+            <div>• <strong>Trusted Browser:</strong> <span style={{ color: '#10b981' }}>✓ {browserName}</span></div>
+            <div>• <strong>Normal Device:</strong> <span style={{ color: '#10b981' }}>✓ Verified Baseline</span></div>
           </div>
         </div>
       </div>

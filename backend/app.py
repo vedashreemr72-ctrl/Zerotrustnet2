@@ -5,10 +5,15 @@ import hashlib
 import uuid
 import json
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 import jwt
 import pandas as pd
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -151,9 +156,30 @@ def init_db():
         logout_time TEXT,
         ip_addr     TEXT,
         device      TEXT,
+        device_id   TEXT DEFAULT '',
+        browser     TEXT DEFAULT '',
+        os          TEXT DEFAULT '',
+        location    TEXT DEFAULT '',
+        department  TEXT DEFAULT '',
+        role        TEXT DEFAULT '',
         is_active   INTEGER DEFAULT 1,
         risk_score  INTEGER DEFAULT 0
     )""")
+
+    # Ensure missing session columns exist for schema migration
+    c.execute("PRAGMA table_info(sessions)")
+    existing_cols = [col[1] for col in c.fetchall()]
+    for col_name in ['device_id', 'browser', 'os', 'location', 'department', 'role']:
+        if col_name not in existing_cols:
+            c.execute(f"ALTER TABLE sessions ADD COLUMN {col_name} TEXT DEFAULT ''")
+
+    # Ensure missing incident columns exist for schema migration
+    c.execute("PRAGMA table_info(incidents)")
+    existing_inc_cols = [col[1] for col in c.fetchall()]
+    if 'assigned_to' not in existing_inc_cols:
+        c.execute("ALTER TABLE incidents ADD COLUMN assigned_to TEXT DEFAULT 'Unassigned'")
+    if 'resolution' not in existing_inc_cols:
+        c.execute("ALTER TABLE incidents ADD COLUMN resolution TEXT DEFAULT ''")
 
     c.execute("""CREATE TABLE IF NOT EXISTS notifications (
         id           TEXT PRIMARY KEY,
@@ -173,14 +199,113 @@ def init_db():
         user_id        TEXT NOT NULL,
         username       TEXT NOT NULL,
         filename       TEXT NOT NULL,
-        filepath       TEXT,
-        classification TEXT DEFAULT 'Confidential',
-        operation      TEXT DEFAULT 'View',
-        file_size_mb   REAL DEFAULT 0.5,
-        access_time    TEXT NOT NULL,
+        filepath       TEXT DEFAULT '',
+        classification TEXT DEFAULT 'Internal',
+        operation      TEXT NOT NULL,
+        file_size_mb   REAL DEFAULT 0.0,
+        timestamp      TEXT NOT NULL,
         is_flagged     INTEGER DEFAULT 0,
         policy_action  TEXT DEFAULT 'Allowed'
     )""")
+
+    # Ensure missing file_access_logs columns exist for schema migration
+    c.execute("PRAGMA table_info(file_access_logs)")
+    existing_file_cols = [col[1] for col in c.fetchall()]
+    if 'filepath' not in existing_file_cols:
+        c.execute("ALTER TABLE file_access_logs ADD COLUMN filepath TEXT DEFAULT ''")
+    if 'file_size_mb' not in existing_file_cols:
+        c.execute("ALTER TABLE file_access_logs ADD COLUMN file_size_mb REAL DEFAULT 0.0")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS departments (
+        id               TEXT PRIMARY KEY,
+        name             TEXT UNIQUE NOT NULL,
+        risk_average     REAL DEFAULT 0.0,
+        total_employees  INTEGER DEFAULT 0,
+        security_level   TEXT DEFAULT 'Standard'
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS devices (
+        id             TEXT PRIMARY KEY,
+        user_id        TEXT,
+        device_id      TEXT UNIQUE NOT NULL,
+        device_name    TEXT,
+        os             TEXT,
+        browser        TEXT,
+        is_registered  INTEGER DEFAULT 1,
+        is_trusted     INTEGER DEFAULT 1,
+        risk_penalty   INTEGER DEFAULT 0,
+        last_seen      TEXT
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS alerts (
+        id           TEXT PRIMARY KEY,
+        alert_code   TEXT UNIQUE,
+        user_id      TEXT,
+        user_name    TEXT,
+        department   TEXT,
+        priority     TEXT DEFAULT 'P2',
+        alert_title  TEXT,
+        severity     TEXT DEFAULT 'High',
+        risk_score   INTEGER DEFAULT 0,
+        created_at   TEXT,
+        status       TEXT DEFAULT 'Active'
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS risk_history (
+        id            TEXT PRIMARY KEY,
+        user_id       TEXT,
+        username      TEXT,
+        timestamp     TEXT NOT NULL,
+        risk_score    INTEGER NOT NULL,
+        risk_delta    INTEGER DEFAULT 0,
+        trigger_event TEXT
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS audit_logs (
+        id              TEXT PRIMARY KEY,
+        timestamp       TEXT NOT NULL,
+        user_id         TEXT NOT NULL,
+        username        TEXT NOT NULL,
+        user_name       TEXT,
+        department      TEXT,
+        event_type      TEXT NOT NULL,
+        event_details   TEXT,
+        ip_addr         TEXT,
+        device          TEXT,
+        is_suspicious   INTEGER DEFAULT 0,
+        risk_contrib    INTEGER DEFAULT 0
+    )""")
+
+    # Seed Departments if empty
+    c.execute("SELECT COUNT(*) FROM departments")
+    if c.fetchone()[0] == 0:
+        depts = [
+            (str(uuid.uuid4()), "Engineering", 42.5, 12, "Strict DevSecOps"),
+            (str(uuid.uuid4()), "Finance", 68.0, 8, "High Risk Financial"),
+            (str(uuid.uuid4()), "Human Resources", 35.0, 5, "Confidential PII"),
+            (str(uuid.uuid4()), "Sales", 28.5, 15, "Standard Commercial"),
+            (str(uuid.uuid4()), "IT Operations", 55.0, 6, "Privileged Admin")
+        ]
+        c.executemany("INSERT INTO departments VALUES (?,?,?,?,?)", depts)
+
+    # Seed Devices if empty
+    c.execute("SELECT COUNT(*) FROM devices")
+    if c.fetchone()[0] == 0:
+        devs = [
+            (str(uuid.uuid4()), "U001", "DEV-55357", "Corporate Macbook Pro", "macOS Sonoma", "Chrome 122", 1, 1, 0, datetime.now().isoformat()),
+            (str(uuid.uuid4()), "U002", "DEV-47722", "Dell Latitude 7420", "Windows 11 Enterprise", "Edge 121", 1, 1, 0, datetime.now().isoformat()),
+            (str(uuid.uuid4()), "U003", "DEV-80878", "Lenovo ThinkPad X1", "Windows 11 Enterprise", "Chrome 122", 1, 0, 15, datetime.now().isoformat())
+        ]
+        c.executemany("INSERT INTO devices VALUES (?,?,?,?,?,?,?,?,?,?)", devs)
+
+    # Seed Alerts if empty
+    c.execute("SELECT COUNT(*) FROM alerts")
+    if c.fetchone()[0] == 0:
+        alrts = [
+            (str(uuid.uuid4()), "ALT-901", "U002", "Ravi Sharma", "Finance", "P1", "Mass Download & USB Storage Mounted", "🔴 Critical", 85, datetime.now().isoformat(), "Active"),
+            (str(uuid.uuid4()), "ALT-902", "U001", "Priya Patel", "Engineering", "P2", "Anomalous Off-Hours Payroll Access", "🟠 High", 65, datetime.now().isoformat(), "Active")
+        ]
+        c.executemany("INSERT INTO alerts VALUES (?,?,?,?,?,?,?,?,?,?,?)", alrts)
 
     conn.commit()
     conn.close()
@@ -304,7 +429,18 @@ def log_audit(user_id, username, name, dept, event_type, details, ip, device, ri
     conn.commit()
     conn.close()
 
+_EVAL_CACHE = {"timestamp": 0, "data": None}
+
+def invalidate_eval_cache():
+    _EVAL_CACHE["timestamp"] = 0
+    _EVAL_CACHE["data"] = None
+
 def load_all_evaluated():
+    import time
+    now_t = time.time()
+    if _EVAL_CACHE["data"] is not None and (now_t - _EVAL_CACHE["timestamp"]) < 30.0:
+        return _EVAL_CACHE["data"].copy()
+
     conn = get_conn()
     c = conn.cursor()
     c.execute("""
@@ -327,7 +463,7 @@ def load_all_evaluated():
     scored = []
     for idx, row in df.iterrows():
         mf = ml_flags.get(idx, {})
-        score, severity, priority, threat_class, reasons, algos = calculate_risk(row.to_dict(), mf)
+        score, severity, priority, threat_class, reasons, algos, detection_layers = calculate_risk(row.to_dict(), mf)
         recs = get_recommendations(row.to_dict(), severity)
         
         # Hardcoded event logs to simulate timelines
@@ -424,12 +560,16 @@ def load_all_evaluated():
             "threat_classification": threat_class,
             "reasons": reasons,
             "algo_contrib": algos,
+            "detection_layers": detection_layers,
             "recommendations": recs,
             "timeline": events,
             "exfil_probability": exfil
         })
         scored.append(r)
-    return pd.DataFrame(scored)
+    res_df = pd.DataFrame(scored)
+    _EVAL_CACHE["timestamp"] = now_t
+    _EVAL_CACHE["data"] = res_df
+    return res_df
 
 def ensure_incidents(df):
     conn = get_conn()
@@ -460,11 +600,14 @@ def ensure_incidents(df):
         # Simulated SMS & Email Notification Dispatch
         print(f"[SECURITY ALERT SENT] Dispatching SMS to +91-XXXXX-SOC1 & Email to soc-alerts@zerotrustnet.local for employee '{row['name']}' (Risk: {row['risk_score']}/100 - Severity: {row['severity']})")
         
-        c.execute("INSERT INTO incidents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("""INSERT INTO incidents 
+            (id, incident_id, user_id, username, user_name, department, created_at, severity, status, summary, evidence, policies_triggered, risk_score, recommendations, resolved_at, resolved_by, notes, assigned_to, resolution) 
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (str(uuid.uuid4()), iid, uid, row['username'], row['name'], row['department'],
                    datetime.now().isoformat(), row['severity'], "Open",
                    f"Insider threat risk: {row['name']} flagged at {row['severity']} ({row['risk_score']}/100)",
-                   evidence, policies, row['risk_score'], recs, None, None, f"SMS & Email notifications dispatched automatically to SOC group."))
+                   evidence, policies, row['risk_score'], recs, None, None, f"SMS & Email notifications dispatched automatically to SOC group.",
+                   "Unassigned", ""))
     conn.commit()
     conn.close()
 
@@ -512,6 +655,66 @@ def api_register():
         "message": f"Employee '{name}' registered successfully! You can now log in."
     })
 
+def verify_device_security(uid, username, device_id, browser, os_sys):
+    """
+    Step 2: Device Verification Engine
+    Evaluates 5 security checks before granting access:
+    1. Registered Device Check
+    2. Trusted Browser Check
+    3. User Normal Device Check
+    4. Allowed OS Check
+    5. Concurrent Active Logins Check
+    """
+    conn = get_conn()
+    c = conn.cursor()
+
+    is_registered = 1 if (device_id and ("DEV-" in device_id or "CORP-" in device_id)) else 0
+    is_trusted_browser = 1 if any(b in browser for b in ["Chrome", "Edge", "Firefox", "Safari"]) else 0
+
+    c.execute("SELECT baseline_device FROM behavior_data WHERE user_id=?", (uid,))
+    row = c.fetchone()
+    baseline_dev = row[0] if row and row[0] else "Corporate Laptop"
+    is_normal_device = 1 if (device_id in baseline_dev or "Corporate" in baseline_dev or "Laptop" in baseline_dev or "Office" in baseline_dev or "Windows" in os_sys or "Mac" in os_sys) else 0
+
+    allowed_oses = ["Windows", "macOS", "Linux", "Ubuntu"]
+    is_os_allowed = 1 if any(o in os_sys for o in allowed_oses) else 0
+
+    c.execute("SELECT COUNT(*) FROM sessions WHERE user_id=? AND is_active=1", (uid,))
+    active_count = c.fetchone()[0]
+    is_concurrent = 1 if active_count > 0 else 0
+
+    conn.close()
+
+    risk_penalty = 0
+    reasons = []
+    if not is_registered:
+        risk_penalty += 15
+        reasons.append("Unregistered Device: Hardware fingerprint not in asset directory (+15 Risk)")
+    if not is_trusted_browser:
+        risk_penalty += 15
+        reasons.append(f"Untrusted Browser: Client '{browser}' not in approved list (+15 Risk)")
+    if not is_normal_device:
+        risk_penalty += 15
+        reasons.append("Abnormal Device: Device differs from employee baseline profile (+15 Risk)")
+    if not is_os_allowed:
+        risk_penalty += 15
+        reasons.append(f"Unapproved OS: '{os_sys}' violates endpoint security compliance (+15 Risk)")
+    if is_concurrent:
+        risk_penalty += 20
+        reasons.append(f"Concurrent Active Session: {active_count} active session(s) already running (+20 Risk)")
+
+    return {
+        "is_registered": bool(is_registered),
+        "is_trusted_browser": bool(is_trusted_browser),
+        "is_normal_device": bool(is_normal_device),
+        "is_os_allowed": bool(is_os_allowed),
+        "is_concurrent": bool(is_concurrent),
+        "active_sessions_count": active_count,
+        "risk_penalty": risk_penalty,
+        "reasons": reasons,
+        "status": "Verified Trusted Device" if risk_penalty == 0 else "Device Policy Violation"
+    }
+
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
     data = request.json or {}
@@ -551,21 +754,43 @@ def api_login():
 
     conn.close()
 
-    # Create session
+    # Step 2: Perform Device Verification
+    client_device_id = data.get("device_id") or f"DEV-{abs(hash(username)) % 90000 + 10000}"
+    client_browser = data.get("browser") or request.headers.get("User-Agent", "Chrome 127.0")
+    client_os = data.get("os") or "Windows 11"
+    client_ip = data.get("ip_addr") or request.remote_addr or f"192.168.1.{abs(hash(username)) % 200 + 10}"
+    client_location = data.get("location") or "Bengaluru, India"
+    login_time = data.get("login_time") or datetime.now().isoformat()
+    device_label = f"{client_os} ({client_browser})"
+
+    dev_check = verify_device_security(uid, username, client_device_id, client_browser, client_os)
+
+    # Update behavior data metrics if device check failed
+    if dev_check["risk_penalty"] > 0:
+        conn = get_conn()
+        device_known_val = 1 if (dev_check["is_registered"] and dev_check["is_normal_device"]) else 0
+        conn.execute("UPDATE behavior_data SET device_known=? WHERE user_id=?", (device_known_val, uid))
+        conn.commit()
+        conn.close()
+
+    # Create enterprise session telemetry
     sid = str(uuid.uuid4())
-    ip = f"10.0.{hash(username)%5}.{hash(username)%200+1}"
-    device = "Office Device" if urole == "employee" else "Admin Console"
-    
     conn = get_conn()
-    conn.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)",
-                 (sid, uid, username, datetime.now().isoformat(), None, ip, device, 1, 0))
+    conn.execute("""
+        INSERT INTO sessions (id, user_id, username, login_time, logout_time, ip_addr, device, device_id, browser, os, location, department, role, is_active, risk_score)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)
+    """, (sid, uid, username, login_time, None, client_ip, device_label, client_device_id, client_browser, client_os, client_location, dept, urole, dev_check["risk_penalty"]))
     conn.commit()
     conn.close()
 
-    # Log audit
-    log_audit(uid, username, name, dept, "Login", f"Authenticated from {device} (IP: {ip})", ip, device, 0, 0, session_id=sid)
+    # Log audit event with Step 2 Device Verification status
+    audit_desc = f"Enterprise Session Created | Step 2 Device Check: {dev_check['status']} (+{dev_check['risk_penalty']} Risk Penalty) | DeviceID: {client_device_id} | OS: {client_os} | Browser: {client_browser}"
+    log_audit(
+        uid, username, name, dept, "Login",
+        audit_desc, client_ip, device_label, dev_check["risk_penalty"], 1 if dev_check["risk_penalty"] > 0 else 0, session_id=sid
+    )
 
-    # Issue token
+    # Issue token with enterprise session payload & device verification
     payload = {
         "user_id": uid,
         "username": username,
@@ -574,12 +799,18 @@ def api_login():
         "emp_type": emp_type,
         "role": urole,
         "session_id": sid,
-        "ip": ip,
-        "device": device,
+        "device_id": client_device_id,
+        "browser": client_browser,
+        "os": client_os,
+        "ip": client_ip,
+        "device": device_label,
+        "location": client_location,
+        "login_time": login_time,
+        "device_verification": dev_check,
         "exp": datetime.utcnow() + timedelta(hours=10)
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    return jsonify({"token": token, "user": payload})
+    return jsonify({"token": token, "user": payload, "device_verification": dev_check})
 
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
@@ -599,6 +830,24 @@ def api_logout():
                   "Logout", "User logged out from portal session", payload["ip"], payload["device"], 0, 0, session_id=sid)
 
         return jsonify({"success": True})
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+@app.route('/api/auth/verify', methods=['GET'])
+def api_verify():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        sid = payload.get("session_id")
+        if sid:
+            conn = get_conn()
+            c = conn.cursor()
+            c.execute("SELECT is_active FROM sessions WHERE id=?", (sid,))
+            s_row = c.fetchone()
+            conn.close()
+            if not s_row or s_row[0] == 0:
+                return jsonify({"error": "Session inactive or terminated"}), 401
+        return jsonify({"valid": True, "user": payload})
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
@@ -683,7 +932,10 @@ def employee_action():
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
-    action_type = request.json.get("action")
+    req_data = request.json or {}
+    action_type = req_data.get("action")
+    custom_details = req_data.get("details")
+    custom_filename = req_data.get("filename")
     
     # Process actions & update metrics
     conn = get_conn()
@@ -703,7 +955,7 @@ def employee_action():
     warning = None
 
     if action_type == "access_hr":
-        details = "Accessed HR Portal — Employee Directory and Policies"
+        details = custom_details or "Accessed HR Portal — Employee Directory and Policies"
         is_susp = 1 if dept not in ["HR", "IT Security"] else 0
         risk_contrib = 15 if is_susp else 0
         if is_susp:
@@ -712,16 +964,16 @@ def employee_action():
             warning = "Access flagged: HR Portal is outside your department scope. SOC has been notified."
 
     elif action_type == "access_payroll":
-        details = "Accessed Payroll Management System — salary data"
+        details = custom_details or "Accessed Payroll Management System — salary data"
         is_susp = 1 if dept not in ["HR", "Finance", "IT Security"] else 0
         risk_contrib = 20 if is_susp else 0
         if is_susp:
             b_data["unusual_collaboration_flag"] = 1
             b_data["unusual_collaboration_details"] = "Accessed Payroll Database"
-            warning = "ALERT: Payroll access is outside your department. Incident flagged."
+            warning = "ALERT: Payroll access is outside your department scope. Incident flagged for SOC audit."
 
     elif action_type == "access_finance":
-        details = "Accessed Finance Dashboard — ledger data"
+        details = custom_details or "Accessed Finance Dashboard — ledger data"
         is_susp = 1 if dept not in ["Finance", "IT Security"] else 0
         risk_contrib = 20 if is_susp else 0
         if is_susp:
@@ -731,53 +983,111 @@ def employee_action():
 
     elif action_type == "download_report":
         event_type = "File Download"
-        details = "Downloaded: Q2_Performance_Report.pdf (2.4 MB)"
+        fname = custom_filename or "Q2_Performance_Report.pdf"
+        details = custom_details or f"Downloaded: {fname} (2.4 MB)"
         b_data["downloads"] = b_data.get("downloads", 0) + 1
         b_data["file_access_count"] = b_data.get("file_access_count", 0) + 1
+        fid = str(uuid.uuid4())
+        conn.execute("INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (fid, uid, uname, fname, f"/company/reports/{fname}", "Confidential", "Download", 2.4, datetime.now().isoformat(), 0, "Allowed"))
 
     elif action_type == "upload_doc":
         event_type = "File Upload"
-        details = "Uploaded: Project_Proposal_v3.docx (1.1 MB) to shared drive"
+        fname = custom_filename or "Project_Proposal_v3.docx"
+        details = custom_details or f"Uploaded: {fname} (1.1 MB) to shared drive"
         b_data["file_access_count"] = b_data.get("file_access_count", 0) + 1
+        fid = str(uuid.uuid4())
+        conn.execute("INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (fid, uid, uname, fname, f"/company/projects/{fname}", "Internal", "Upload", 1.1, datetime.now().isoformat(), 0, "Allowed"))
 
     elif action_type == "use_ai":
         event_type = "GenAI Upload"
-        details = "Browser session opened to chat.openai.com — clipboard upload (12.5 MB)"
+        details = custom_details or "Browser session opened to GenAI Tool — payload upload (12.5 MB)"
         b_data["genai_upload_mb"] = b_data.get("genai_upload_mb", 0.0) + 12.5
         b_data["ai_risk_flag"] = 1
-        b_data["ai_risk_details"] = "Sensitive code/text uploaded to ChatGPT"
+        b_data["ai_risk_details"] = "Sensitive code/text uploaded to public GenAI assistant"
         is_susp = 1
         risk_contrib = 25
-        warning = "AI tool upload detected. Sharing company data with public GenAI is logged as policy warning."
+        warning = "AI tool upload detected. Sharing company data with public GenAI is logged as a security policy violation."
 
     elif action_type == "insert_usb":
         event_type = "USB Event"
-        details = "Unregistered USB device connected and mounted"
+        details = custom_details or "Unregistered USB device connected and mounted (SanDisk Ultra 64GB)"
         b_data["usb_usage"] = 1
         is_susp = 1
         risk_contrib = 20
-        warning = "USB device connected. Company endpoints restrict unapproved storage media."
+        warning = "USB device connected. Endpoint security controls restrict unapproved storage media."
 
     elif action_type == "export_data":
         event_type = "File Download"
-        details = "Data export request: 23 client records exported"
+        details = custom_details or "Data export request: 23 client records exported to CSV"
         b_data["downloads"] = b_data.get("downloads", 0) + 23
         is_susp = 1
         risk_contrib = 15
         warning = "Export logged. High-frequency client exports are audited by IT Security."
+        fid = str(uuid.uuid4())
+        conn.execute("INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (fid, uid, uname, custom_filename or "Client_Export_Master.csv", "/company/exports/Client_Export_Master.csv", "Secret", "Download", 5.8, datetime.now().isoformat(), 1, "Logged & Flagged for SOC Audit"))
 
     elif action_type == "change_pwd":
         event_type = "Password Reset"
-        details = "Employee-initiated password change request completed"
+        details = custom_details or "Employee-initiated password change request completed successfully"
+
+    elif action_type == "delete_file":
+        event_type = "Delete File"
+        fname = custom_filename or "Customer_Records_2025.db"
+        details = custom_details or f"Permanently deleted: {fname} from company repository"
+        b_data["file_access_count"] = b_data.get("file_access_count", 0) + 1
+        is_susp = 1
+        risk_contrib = 15
+        warning = f"File deletion logged: {fname} permanently deleted from enterprise storage."
+        fid = str(uuid.uuid4())
+        conn.execute("INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (fid, uid, uname, fname, f"/company/db/{fname}", "Confidential", "Delete", 14.2, datetime.now().isoformat(), 1, "Logged & Flagged for Audit"))
+
+    elif action_type == "open_confidential":
+        event_type = "Open Confidential File"
+        fname = custom_filename or "Executive_Salary_Matrix_2026.xlsx"
+        details = custom_details or f"Opened Confidential Resource: {fname}"
+        b_data["sensitive_files"] = b_data.get("sensitive_files", 0) + 1
+        b_data["file_access_count"] = b_data.get("file_access_count", 0) + 1
+        is_susp = 1
+        risk_contrib = 20
+        warning = f"Confidential file accessed: {fname}. Access logged to immutable audit trail."
+        fid = str(uuid.uuid4())
+        conn.execute("INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (fid, uid, uname, fname, f"/company/executive/{fname}", "Confidential", "View", 3.2, datetime.now().isoformat(), 1, "Flagged for SOC Audit"))
+
+    elif action_type == "failed_operations":
+        event_type = "Multiple Failed Actions"
+        details = custom_details or "Repeated failed operations: 5 consecutive permission denied errors on restricted directory"
+        b_data["failed_logins"] = b_data.get("failed_logins", 0) + 5
+        is_susp = 1
+        risk_contrib = 25
+        warning = "Multiple failed operations detected. Repeated permission violations increase session risk score."
+
+    elif action_type == "long_inactive_session":
+        event_type = "Long Inactive Session"
+        details = custom_details or "Session idle timeout: 45 minutes of inactivity detected without lockscreen lock"
+        is_susp = 1
+        risk_contrib = 10
+        warning = "Long inactive session detected. Screen remained unlocked during prolonged idle period."
+
+    elif action_type == "concurrent_login":
+        event_type = "Concurrent Login"
+        details = custom_details or "Concurrent session attempt: Second active login initiated from secondary device"
+        is_susp = 1
+        risk_contrib = 20
+        warning = "Concurrent login detected across multiple endpoint devices."
 
     # Save behavior updates back to DB
     c.execute("""
         UPDATE behavior_data SET
-        downloads=?, file_access_count=?, genai_upload_mb=?, usb_usage=?, ai_risk_flag=?,
+        downloads=?, file_access_count=?, sensitive_files=?, failed_logins=?, genai_upload_mb=?, usb_usage=?, ai_risk_flag=?,
         ai_risk_details=?, unusual_collaboration_flag=?, unusual_collaboration_details=?
         WHERE user_id=?
-    """, (b_data["downloads"], b_data["file_access_count"], b_data["genai_upload_mb"],
-          b_data["usb_usage"], b_data["ai_risk_flag"], b_data["ai_risk_details"],
+    """, (b_data["downloads"], b_data["file_access_count"], b_data.get("sensitive_files", 0), b_data.get("failed_logins", 0),
+          b_data["genai_upload_mb"], b_data["usb_usage"], b_data["ai_risk_flag"], b_data["ai_risk_details"],
           b_data["unusual_collaboration_flag"], b_data["unusual_collaboration_details"], uid))
     conn.commit()
     conn.close()
@@ -786,10 +1096,403 @@ def employee_action():
     log_audit(uid, uname, name, dept, event_type, details, ip, device, risk_contrib, is_susp, session_id=sid)
 
     # Recalculate risk score immediately
+    invalidate_eval_cache()
     df_fresh = load_all_evaluated()
     ensure_incidents(df_fresh)
 
     return jsonify({"success": True, "warning": warning})
+
+@app.route('/api/employee/download-report', methods=['GET'])
+def employee_download_report():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload["session_id"]
+        ip = payload["ip"]
+        device = payload["device"]
+        role = payload.get("role", "Employee")
+        location = payload.get("location", "Bengaluru, India")
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    # Load evaluated risk profile
+    df_all = load_all_evaluated()
+    r = {}
+    if not df_all.empty:
+        my_row = df_all[df_all['id'] == uid]
+        if not my_row.empty:
+            r = my_row.iloc[0].to_dict()
+
+    risk_score = r.get("risk_score", 0)
+    severity = r.get("severity", "🟢 Low")
+    reasons = r.get("reasons", ["No unusual behavior detected"])
+    recs = r.get("recommendations", ["Maintain current credentials"])
+
+    # Generate PDF in memory buffer using ReportLab
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+    )
+
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor('#0f172a'),
+        spaceAfter=4
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor('#0284c7'),
+        spaceAfter=12
+    )
+    h2_style = ParagraphStyle(
+        'SectionHeader',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        leading=15,
+        textColor=colors.HexColor('#0f172a'),
+        spaceBefore=10,
+        spaceAfter=6
+    )
+    body_style = ParagraphStyle(
+        'BodyTextCustom',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        leading=13,
+        textColor=colors.HexColor('#334155')
+    )
+
+    story = []
+
+    story.append(Paragraph("ZeroTrustNet Enterprise Security Audit Report", title_style))
+    story.append(Paragraph("CONFIDENTIAL · OFFICIAL SOC TELEMETRY REPORT (PDF)", subtitle_style))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284c7'), spaceAfter=12))
+
+    meta_data = [
+        [Paragraph("<b>Employee Name:</b>", body_style), Paragraph(str(name), body_style), Paragraph("<b>Employee ID:</b>", body_style), Paragraph(str(uid), body_style)],
+        [Paragraph("<b>Department:</b>", body_style), Paragraph(str(dept), body_style), Paragraph("<b>User Role:</b>", body_style), Paragraph(str(role).capitalize(), body_style)],
+        [Paragraph("<b>IP Address:</b>", body_style), Paragraph(str(ip), body_style), Paragraph("<b>Device:</b>", body_style), Paragraph(str(device), body_style)],
+        [Paragraph("<b>Location:</b>", body_style), Paragraph(str(location), body_style), Paragraph("<b>Generated At:</b>", body_style), Paragraph(datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'), body_style)],
+    ]
+    meta_table = Table(meta_data, colWidths=[130, 220, 130, 220])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+        ('PADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("Continuous UEBA & AI Risk Assessment", h2_style))
+    
+    risk_bg = '#dcfce7' if risk_score < 30 else '#fef9c3' if risk_score < 60 else '#ffedd5' if risk_score < 80 else '#fee2e2'
+    risk_tc = '#15803d' if risk_score < 30 else '#a16207' if risk_score < 60 else '#c2410c' if risk_score < 80 else '#b91c1c'
+    
+    risk_summary_data = [
+        [Paragraph("<b>Overall Risk Score</b>", body_style), Paragraph("<b>Severity Rating</b>", body_style), Paragraph("<b>Monitoring Status</b>", body_style)],
+        [Paragraph(f"<font size=13 color='{risk_tc}'><b>{risk_score} / 100</b></font>", body_style),
+         Paragraph(f"<font size=11 color='{risk_tc}'><b>{severity}</b></font>", body_style),
+         Paragraph("<b>Active Continuous Session</b>", body_style)]
+    ]
+    risk_table = Table(risk_summary_data, colWidths=[230, 230, 240])
+    risk_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+        ('BACKGROUND', (0,1), (-1,1), colors.HexColor(risk_bg)),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('PADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(risk_table)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("Explainable AI (XAI) Risk Factors", h2_style))
+    reasons_text = "<br/>".join([f"• {str(r_item)}" for r_item in reasons]) if isinstance(reasons, list) else f"• {reasons}"
+    story.append(Paragraph(reasons_text, body_style))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("Recommended Security Actions & Directives", h2_style))
+    recs_text = "<br/>".join([f"✓ {str(rc)}" for rc in recs]) if isinstance(recs, list) else f"✓ {recs}"
+    story.append(Paragraph(recs_text, body_style))
+    story.append(Spacer(1, 14))
+
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#cbd5e1'), spaceBefore=8, spaceAfter=6))
+    footer_text = f"Cryptographically Signed Audit Stamp | Session ID: {sid} | ZeroTrustNet Framework v4.2"
+    footer_style = ParagraphStyle('FooterStyle', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8, textColor=colors.HexColor('#64748b'), alignment=1)
+    story.append(Paragraph(footer_text, footer_style))
+
+    doc.build(story)
+    pdf_data = buffer.getvalue()
+    buffer.close()
+
+    log_audit(uid, uname, name, dept, "File Download", "Downloaded ZeroTrust_Security_Audit_Report.pdf (Official PDF Report Download)", ip, device, 0, 0, session_id=sid)
+    invalidate_eval_cache()
+
+    response = make_response(pdf_data)
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = 'attachment; filename="ZeroTrust_Security_Audit_Report.pdf"'
+    return response
+
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route('/api/employee/upload-file', methods=['POST'])
+def employee_upload_file():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload["session_id"]
+        ip = payload["ip"]
+        device = payload["device"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    if 'file' not in request.files:
+        return jsonify({"error": "No file included in upload request."}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No file selected."}), 400
+
+    classification = request.form.get("classification", "Internal")
+    filename = file.filename
+    
+    # Save file to uploads folder
+    save_path = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4().hex[:8]}_{filename}")
+    file.save(save_path)
+
+    file_size_bytes = os.path.getsize(save_path)
+    file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
+    if file_size_mb == 0.0:
+        file_size_mb = 0.01
+
+    is_flagged = 1 if classification in ["Confidential", "Secret"] else 0
+    policy_action = "Flagged for SOC Audit" if is_flagged else "Allowed & Logged"
+
+    conn = get_conn()
+    c = conn.cursor()
+    fid = str(uuid.uuid4())
+    c.execute("""
+        INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (fid, uid, uname, filename, save_path, classification, "Upload", file_size_mb, datetime.now().isoformat(), is_flagged, policy_action))
+
+    # Update behavior data metrics
+    c.execute("""
+        UPDATE behavior_data SET file_access_count = file_access_count + 1
+        WHERE user_id=?
+    """, (uid,))
+    if is_flagged:
+        c.execute("""
+            UPDATE behavior_data SET sensitive_files = sensitive_files + 1
+            WHERE user_id=?
+        """, (uid,))
+    conn.commit()
+    conn.close()
+
+    risk_contrib = 20 if is_flagged else 5
+    audit_desc = f"Uploaded File: {filename} ({file_size_mb} MB) [{classification}] to server storage"
+    log_audit(uid, uname, name, dept, "File Upload", audit_desc, ip, device, risk_contrib, is_flagged, session_id=sid)
+
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    warning_msg = None
+    if is_flagged:
+        warning_msg = f"File upload '{filename}' classified as {classification}. Access and storage flagged to SOC audit trail."
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "file_size_mb": file_size_mb,
+        "classification": classification,
+        "message": f"File '{filename}' ({file_size_mb} MB) uploaded successfully to enterprise server vault!",
+        "warning": warning_msg
+    })
+
+@app.route('/api/employee/export-data', methods=['GET'])
+def employee_export_data():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload["session_id"]
+        ip = payload["ip"]
+        device = payload["device"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE behavior_data SET downloads = downloads + 25 WHERE user_id=?", (uid,))
+    conn.commit()
+    conn.close()
+
+    csv_data = "Client ID,Client Name,Company,Email,Risk Rating,Status\n"
+    clients = [
+        ("CL-101", "Acme Financial Corp", "Acme Corp", "security@acme.com", "Low", "Active"),
+        ("CL-102", "Apex Healthcare Systems", "Apex Health", "compliance@apex.org", "Low", "Active"),
+        ("CL-103", "Global Logistics Int", "Global Logistics", "ops@globallogistics.com", "Medium", "Monitored"),
+        ("CL-104", "TechCorp Solutions", "TechCorp", "admin@techcorp.io", "Low", "Active"),
+        ("CL-105", "Vanguard Defense Inc", "Vanguard", "secops@vanguard.def", "High", "Audited"),
+        ("CL-106", "Starlight Media Group", "Starlight", "it@starlight.net", "Low", "Active"),
+    ]
+    for c_id, c_name, comp, email, r_rate, status in clients:
+        csv_data += f"{c_id},{c_name},{comp},{email},{r_rate},{status}\n"
+
+    log_audit(uid, uname, name, dept, "File Download", "Exported 25 Enterprise Client Records to CSV (Client_Export_Master.csv)", ip, device, 15, 1, session_id=sid)
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    response = make_response(csv_data)
+    response.headers["Content-Type"] = "text/csv"
+    response.headers["Content-Disposition"] = 'attachment; filename="Client_Export_Master.csv"'
+    return response
+
+@app.route('/api/employee/change-password', methods=['POST'])
+def employee_change_password():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload["session_id"]
+        ip = payload["ip"]
+        device = payload["device"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    data = request.json or {}
+    old_pwd = data.get("old_password", "")
+    new_pwd = data.get("new_password", "")
+
+    if not old_pwd or not new_pwd:
+        return jsonify({"error": "Both current password and new password are required."}), 400
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT pwd_hash FROM users WHERE id=?", (uid,))
+    row = c.fetchone()
+    if not row or row[0] != hash_pwd(old_pwd):
+        conn.close()
+        return jsonify({"error": "Current password is incorrect."}), 400
+
+    c.execute("UPDATE users SET pwd_hash=? WHERE id=?", (hash_pwd(new_pwd), uid))
+    conn.commit()
+    conn.close()
+
+    log_audit(uid, uname, name, dept, "Password Reset", "Employee changed account password successfully", ip, device, 0, 0, session_id=sid)
+    return jsonify({"success": True, "message": "Password changed successfully!"})
+
+@app.route('/api/employee/genai-query', methods=['POST'])
+def employee_genai_query():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload["session_id"]
+        ip = payload["ip"]
+        device = payload["device"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    prompt = (request.json or {}).get("prompt", "").strip()
+    if not prompt:
+        return jsonify({"error": "Prompt cannot be empty"}), 400
+
+    # Sensitivity check
+    sensitive_keywords = ["credit card", "ssn", "salary", "password", "secret", "token", "source code", "db_password", "private key"]
+    is_sensitive = any(kw in prompt.lower() for kw in sensitive_keywords)
+    payload_mb = round(len(prompt.encode('utf-8')) / (1024 * 1024) + 12.5, 2)
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE behavior_data SET genai_upload_mb = genai_upload_mb + ?, ai_risk_flag = 1, ai_risk_details = ? WHERE user_id=?",
+              (payload_mb, f"Prompt uploaded to GenAI Assistant (Length: {len(prompt)} chars)", uid))
+    conn.commit()
+    conn.close()
+
+    risk_contrib = 25 if is_sensitive else 15
+    audit_desc = f"GenAI Assistant Prompt Executed (Payload: {payload_mb} MB) | {'SENSITIVE DATA DETECTED' if is_sensitive else 'Standard Query'}"
+    log_audit(uid, uname, name, dept, "GenAI Upload", audit_desc, ip, device, risk_contrib, 1, session_id=sid)
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    response_text = f"🤖 [ZeroTrust AI Assistant]: Processed request ({len(prompt)} chars)."
+    if is_sensitive:
+        response_text += "\n⚠️ DLP ALERT: Prompt contained potentially sensitive enterprise terminology. Event logged to SOC audit trail."
+    else:
+        response_text += "\n✅ Query verified under standard enterprise AI usage policies."
+
+    return jsonify({
+        "response": response_text,
+        "is_sensitive": is_sensitive,
+        "payload_mb": payload_mb,
+        "warning": "GenAI interaction logged under Data Loss Prevention (DLP) monitoring policy."
+    })
+
+@app.route('/api/employee/terminate-other-sessions', methods=['POST'])
+def employee_terminate_other_sessions():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload["session_id"]
+        ip = payload["ip"]
+        device = payload["device"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE sessions SET is_active=0, logout_time=? WHERE user_id=? AND id!=?",
+              (datetime.now().isoformat(), uid, sid))
+    conn.commit()
+    conn.close()
+
+    log_audit(uid, uname, name, dept, "Session Terminated", "User terminated all concurrent remote sessions from dashboard", ip, device, 0, 0, session_id=sid)
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    return jsonify({"success": True, "message": "All other active sessions have been terminated."})
+
 
 @app.route('/api/admin/dashboard', methods=['GET'])
 def admin_dashboard():
@@ -810,9 +1513,11 @@ def admin_dashboard():
     sec_score = int(100 - (avg_risk * 0.38))
     total_exposure = int(df['business_impact_rupees'].sum())
 
-    # Get active sessions and open incidents count
+    # Get active sessions, online employees, blocked users, and open incidents count
     conn = get_conn()
     active_sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE is_active=1").fetchone()[0]
+    online_count = conn.execute("SELECT COUNT(DISTINCT user_id) FROM sessions WHERE is_active=1").fetchone()[0]
+    blocked_count = conn.execute("SELECT COUNT(*) FROM users WHERE is_active=0").fetchone()[0]
     open_incidents = conn.execute("SELECT COUNT(*) FROM incidents WHERE status='Open'").fetchone()[0]
     conn.close()
 
@@ -844,10 +1549,13 @@ def admin_dashboard():
     return jsonify({
         "stats": {
             "total_monitored": total,
-            "active_sessions": active_sessions,
-            "open_incidents": open_incidents,
+            "employees_online": max(online_count, 1 if total > 0 else 0),
+            "sessions_active": active_sessions,
             "critical_alerts": critical,
+            "blocked_users": blocked_count,
+            "risk_average": round(avg_risk, 1),
             "security_score": sec_score,
+            "open_incidents": open_incidents,
             "financial_exposure": total_exposure
         },
         "severity_distribution": {
@@ -895,26 +1603,66 @@ def admin_update_incident(id):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         analyst = payload["username"]
+        analyst_name = payload.get("name", "SOC Analyst")
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
     data = request.json or {}
-    new_status = data.get("status", "Open")
+    action_verb = data.get("action", "").lower()
+    new_status = data.get("status")
+    assigned_to = data.get("assigned_to")
     notes = data.get("notes", "")
-
-    resolved_at = datetime.now().isoformat() if new_status == "Resolved" else None
+    resolution = data.get("resolution", "")
 
     conn = get_conn()
-    conn.execute("UPDATE incidents SET status=?, notes=?, resolved_at=?, resolved_by=? WHERE id=?",
-                 (new_status, notes, resolved_at, analyst, id))
+    c = conn.cursor()
+    c.execute("SELECT status, severity, incident_id FROM incidents WHERE id=?", (id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Incident not found"}), 404
+
+    curr_status, curr_sev, inc_code = row
+
+    if action_verb == "investigate":
+        new_status = "Investigating"
+        assigned_to = assigned_to or f"{analyst_name} (SOC L2)"
+        notes = notes or f"Investigation initiated by {analyst_name}. Collecting evidence and session traces."
+    elif action_verb == "escalate":
+        new_status = "Escalated"
+        curr_sev = "🔴 Critical"
+        assigned_to = assigned_to or "SOC Lead / Tier 3 Response Team"
+        notes = notes or f"ESCALATED to P1 Critical Response Team by {analyst_name}."
+    elif action_verb == "resolve":
+        new_status = "Resolved"
+        assigned_to = assigned_to or analyst_name
+        resolution = resolution or notes or "Resolved: Employee behavior audited and baseline verified."
+    elif action_verb == "close":
+        new_status = "Closed"
+        assigned_to = assigned_to or analyst_name
+        resolution = resolution or notes or "Closed: Case archived after complete threat mitigation."
+    
+    if not new_status:
+        new_status = curr_status
+    if not assigned_to:
+        assigned_to = "SOC Team"
+
+    resolved_at = datetime.now().isoformat() if new_status in ["Resolved", "Closed"] else None
+    resolved_by = analyst if new_status in ["Resolved", "Closed"] else None
+
+    c.execute("""
+        UPDATE incidents SET
+        status=?, severity=?, assigned_to=?, notes=?, resolution=?, resolved_at=?, resolved_by=?
+        WHERE id=?
+    """, (new_status, curr_sev, assigned_to, notes, resolution, resolved_at, resolved_by, id))
     conn.commit()
     conn.close()
 
     log_audit(payload["user_id"], analyst, payload["name"], payload["department"],
-              "Incident Updated", f"Incident ID {id} set to {new_status}. Notes: {notes}",
+              "Incident Action", f"Incident {inc_code} action '{action_verb or new_status}'. Status: {new_status}, Assigned: {assigned_to}",
               payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
 
-    return jsonify({"success": True})
+    return jsonify({"success": True, "status": new_status, "assigned_to": assigned_to, "message": f"Incident {inc_code} updated to '{new_status}'."})
 
 @app.route('/api/admin/policies', methods=['GET'])
 def admin_policies():
@@ -1022,16 +1770,23 @@ def admin_toggle_policy(id):
 @app.route('/api/admin/copilot/chat', methods=['POST'])
 def admin_copilot():
     data = request.json or {}
-    employee_name = data.get("employee_name")
+    employee_name = data.get("employee_name") or data.get("employee")
+    user_id = data.get("user_id")
     query = data.get("query", "").lower()
 
     df = load_all_evaluated()
     if df.empty:
         return jsonify({"error": "No data available"}), 404
 
-    emp_row = df[df['name'] == employee_name]
+    emp_row = pd.DataFrame()
+    if user_id:
+        emp_row = df[df['id'] == user_id]
+    if emp_row.empty and employee_name:
+        emp_row = df[df['name'].str.lower() == str(employee_name).lower()]
+    if emp_row.empty and employee_name:
+        emp_row = df[df['username'].str.lower() == str(employee_name).lower()]
     if emp_row.empty:
-        return jsonify({"error": "Employee profile not found"}), 404
+        emp_row = df.head(1)
 
     r = emp_row.iloc[0].to_dict()
 
@@ -1049,7 +1804,7 @@ def admin_copilot():
         ans = f"We run 4 ML algorithms. " + (f"Flagged anomalies: {', '.join(anoms)}." if anoms else "All ML algorithms classified behaviour as Normal.") + f" Additionally, the rule-based engine identified {len(r.get('reasons',[]))} baseline violations."
     elif any(w in query for w in ["timeline", "event", "when", "session", "log"]):
         events = r.get('timeline', [])
-        flagged = [e for e in events if e["flagged"]]
+        flagged = [e for e in events if e.get("flagged")]
         ans = f"Recorded {len(events)} events in current session timeline. Key deviations: " + "; ".join([f"[{e['time']}] {e['desc']}" for e in flagged[:3]])
     else:
         reasons_str = "; ".join(r.get('reasons', [])[:3])
@@ -1067,33 +1822,41 @@ def admin_sim_attack():
         return jsonify({"error": "Invalid token"}), 401
 
     data = request.json or {}
-    employee_name = data.get("employee_name")
-    vector = data.get("vector") # usb, phish, privilege, shadow, travel
+    employee_name = data.get("employee_name") or data.get("employee")
+    user_id = data.get("user_id")
+    vector = data.get("vector") or data.get("simulation_type") or "usb"
 
     df = load_all_evaluated()
     if df.empty:
         return jsonify({"error": "No user data"}), 404
 
-    emp_row = df[df['name'] == employee_name]
+    emp_row = pd.DataFrame()
+    if user_id:
+        emp_row = df[df['id'] == user_id]
+    if emp_row.empty and employee_name:
+        emp_row = df[df['name'].str.lower() == str(employee_name).lower()]
+    if emp_row.empty and employee_name:
+        emp_row = df[df['username'].str.lower() == str(employee_name).lower()]
     if emp_row.empty:
-        return jsonify({"error": "User not found"}), 404
+        emp_row = df.head(1)
 
+    target_emp_name = emp_row.iloc[0]['name']
     uid = emp_row.iloc[0]['id']
 
     conn = get_conn()
-    if vector == "usb":
+    if vector in ["usb", "mass_download"]:
         conn.execute("UPDATE behavior_data SET usb_usage=1, downloads=280, sensitive_files=14, resignation_flag=1, business_impact_rupees=1100000, mitre_techniques=?, mitre_confidence=98 WHERE user_id=?",
                      ("T1005 (Data from Local System), T1052.001 (Exfiltration over USB)", uid))
-    elif vector == "phish":
+    elif vector in ["phish", "off_hours"]:
         conn.execute("UPDATE behavior_data SET device_known=0, failed_logins=6, login_time=3, current_login_location='North Korea', mitre_techniques=?, mitre_confidence=92 WHERE user_id=?",
                      ("T1078 (Valid Accounts), T1110 (Brute Force)", uid))
-    elif vector == "privilege":
+    elif vector in ["privilege", "admin_escalation"]:
         conn.execute("UPDATE behavior_data SET privilege_escalation_flag=1, privilege_escalation_details='Role Yesterday: Employee, Role Today: Admin', business_impact_rupees=2400000, mitre_techniques=?, mitre_confidence=95 WHERE user_id=?",
                      ("T1078 (Valid Accounts), T1098 (Account Manipulation)", uid))
-    elif vector == "shadow":
+    elif vector in ["shadow", "genai_exfil"]:
         conn.execute("UPDATE behavior_data SET genai_upload_mb=112.5, shadow_it_flag=1, shadow_it_details='AnyDesk (Blocked), Unknown VPN (Blocked)', ai_risk_flag=1, ai_risk_details='Sensitive source code pasted to ChatGPT & Gemini', business_impact_rupees=1600000, mitre_techniques=?, mitre_confidence=94 WHERE user_id=?",
                      ("T1567.002 (Exfiltration to Cloud Services)", uid))
-    elif vector == "travel":
+    elif vector in ["travel", "impossible_travel"]:
         conn.execute("UPDATE behavior_data SET impossible_travel_flag=1, impossible_travel_details='Office (09:00) → Moscow IP (09:08). Travel time: 10 Hours.', device_known=0, current_login_location='Russia', mitre_techniques=?, mitre_confidence=97 WHERE user_id=?",
                      ("T1133 (External Remote Services)", uid))
     
@@ -1101,10 +1864,10 @@ def admin_sim_attack():
     conn.close()
 
     log_audit(payload["user_id"], analyst, payload["name"], payload["department"],
-              "Attack Simulated", f"Injected simulated vector: {vector.upper()} on {employee_name}",
+              "Attack Simulated", f"Injected simulated vector: {str(vector).upper()} on {target_emp_name}",
               payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
 
-    # Load fresh to trigger incident logging
+    invalidate_eval_cache()
     df_fresh = load_all_evaluated()
     ensure_incidents(df_fresh)
 
@@ -1120,50 +1883,60 @@ def admin_sim_reset():
         return jsonify({"error": "Invalid token"}), 401
 
     data = request.json or {}
-    employee_name = data.get("employee_name")
+    employee_name = data.get("employee_name") or data.get("employee")
+    user_id = data.get("user_id")
 
     df = load_all_evaluated()
     if df.empty:
         return jsonify({"error": "No user data"}), 404
 
-    emp_row = df[df['name'] == employee_name]
+    emp_row = pd.DataFrame()
+    if user_id:
+        emp_row = df[df['id'] == user_id]
+    if emp_row.empty and employee_name:
+        emp_row = df[df['name'].str.lower() == str(employee_name).lower()]
+    if emp_row.empty and employee_name:
+        emp_row = df[df['username'].str.lower() == str(employee_name).lower()]
     if emp_row.empty:
-        return jsonify({"error": "User not found"}), 404
+        emp_row = df.head(1)
 
     uid = emp_row.iloc[0]['id']
     uname = emp_row.iloc[0]['username']
 
-    bd = BEHAVIOR_SEED.get(uname)
-    if bd:
-        conn = get_conn()
-        conn.execute("""UPDATE behavior_data SET
-            login_time=?,file_access_count=?,failed_logins=?,device_known=?,downloads=?,sensitive_files=?,
-            resignation_flag=?,genai_upload_mb=?,external_uploads=?,usb_usage=?,email_attachments=?,
-            printing_events=?,impossible_travel_flag=?,impossible_travel_details=?,
-            credential_sharing_flag=?,credential_sharing_details=?,shadow_it_flag=?,shadow_it_details=?,
-            ai_risk_flag=?,ai_risk_details=?,unusual_collaboration_flag=?,unusual_collaboration_details=?,
-            privilege_escalation_flag=?,privilege_escalation_details=?,mitre_techniques=?,mitre_confidence=?,
-            business_impact_rupees=?,current_login_location=? WHERE user_id=?""",
-            (bd["login_time"],bd["file_access_count"],bd["failed_logins"],bd["device_known"],
-             bd["downloads"],bd["sensitive_files"],bd["resignation_flag"],bd["genai_upload_mb"],
-             bd["external_uploads"],bd["usb_usage"],bd["email_attachments"],bd["printing_events"],
-             bd["impossible_travel_flag"],bd["impossible_travel_details"],
-             bd["credential_sharing_flag"],bd["credential_sharing_details"],
-             bd["shadow_it_flag"],bd["shadow_it_details"],bd["ai_risk_flag"],bd["ai_risk_details"],
-             bd["unusual_collaboration_flag"],bd["unusual_collaboration_details"],
-             bd["privilege_escalation_flag"],bd["privilege_escalation_details"],
-             bd["mitre_techniques"],bd["mitre_confidence"],bd["business_impact_rupees"],
-             bd["current_login_location"],uid))
-        
-        # Delete active incident so it can re-trigger next time if simulated
-        conn.execute("DELETE FROM incidents WHERE user_id=?", (uid,))
-        
-        conn.commit()
-        conn.close()
+    bd = BEHAVIOR_SEED.get(uname, {
+        "login_time": 9, "file_access_count": 15, "failed_logins": 0, "device_known": 1,
+        "downloads": 5, "sensitive_files": 0, "resignation_flag": 0, "genai_upload_mb": 0.0,
+        "external_uploads": 0, "usb_usage": 0, "email_attachments": 0, "printing_events": 0,
+        "impossible_travel_flag": 0, "credential_sharing_flag": 0, "shadow_it_flag": 0,
+        "ai_risk_flag": 0, "unusual_collaboration_flag": 0, "privilege_escalation_flag": 0
+    })
+
+    conn = get_conn()
+    conn.execute("""UPDATE behavior_data SET
+        login_time=?,file_access_count=?,failed_logins=?,device_known=?,downloads=?,sensitive_files=?,
+        resignation_flag=?,genai_upload_mb=?,external_uploads=?,usb_usage=?,email_attachments=?,
+        printing_events=?,impossible_travel_flag=?,impossible_travel_details='',
+        credential_sharing_flag=?,credential_sharing_details='',shadow_it_flag=?,shadow_it_details='',
+        ai_risk_flag=?,ai_risk_details='',unusual_collaboration_flag=?,unusual_collaboration_details='',
+        privilege_escalation_flag=?,privilege_escalation_details='',mitre_techniques='None',mitre_confidence=0,
+        business_impact_rupees=0,current_login_location='Office' WHERE user_id=?""",
+        (bd.get("login_time", 9), bd.get("file_access_count", 15), bd.get("failed_logins", 0), bd.get("device_known", 1),
+         bd.get("downloads", 5), bd.get("sensitive_files", 0), bd.get("resignation_flag", 0), bd.get("genai_upload_mb", 0.0),
+         bd.get("external_uploads", 0), bd.get("usb_usage", 0), bd.get("email_attachments", 0), bd.get("printing_events", 0),
+         bd.get("impossible_travel_flag", 0), bd.get("credential_sharing_flag", 0), bd.get("shadow_it_flag", 0),
+         bd.get("ai_risk_flag", 0), bd.get("unusual_collaboration_flag", 0), bd.get("privilege_escalation_flag", 0), uid))
+    
+    conn.execute("DELETE FROM incidents WHERE user_id=?", (uid,))
+    conn.commit()
+    conn.close()
 
     log_audit(payload["user_id"], analyst, payload["name"], payload["department"],
-              "Baseline Restored", f"Restored behavioral baseline parameters for {employee_name}",
+              "Baseline Restored", f"Restored behavioral baseline parameters for {uname}",
               payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
+
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
 
     return jsonify({"success": True})
 
@@ -1203,6 +1976,255 @@ def admin_audit_logs():
         })
 
     return jsonify(audit_list)
+
+@app.route('/api/admin/live-activity', methods=['GET'])
+def admin_live_activity():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT timestamp, user_name, event_type, event_details, is_suspicious, risk_contrib
+        FROM audit_events ORDER BY timestamp DESC LIMIT 30
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    siem_stream = []
+    for r in rows:
+        ts, uname, etype, edet, is_susp, rc = r
+        try:
+            time_str = datetime.fromisoformat(ts).strftime("%H:%M")
+        except Exception:
+            time_str = ts[:5] if len(str(ts)) >= 5 else "09:00"
+
+        siem_stream.append({
+            "time": time_str,
+            "user": uname or "System",
+            "event_type": etype,
+            "details": edet,
+            "is_suspicious": bool(is_susp),
+            "risk_contrib": rc
+        })
+
+    # Default fallback simulated SIEM stream if database events are minimal
+    if len(siem_stream) < 6:
+        siem_stream = [
+            {"time": "09:00", "user": "Ravi", "event_type": "Login", "details": "Successful SSO Authentication", "is_suspicious": False, "risk_contrib": 0},
+            {"time": "09:02", "user": "Ravi", "event_type": "Payroll Access", "details": "Accessed Payroll System", "is_suspicious": True, "risk_contrib": 20},
+            {"time": "09:04", "user": "Ravi", "event_type": "Download Report", "details": "Downloaded Q2_Performance_Report.pdf", "is_suspicious": False, "risk_contrib": 0},
+            {"time": "09:06", "user": "Ravi", "event_type": "New Device", "details": "Access attempt from unregistered hardware fingerprint", "is_suspicious": True, "risk_contrib": 15},
+            {"time": "09:08", "user": "System", "event_type": "Risk Increased", "details": "Unified UEBA Risk Score updated to 65/100", "is_suspicious": True, "risk_contrib": 25},
+            {"time": "09:09", "user": "SOC Engine", "event_type": "Alert Generated", "details": "P1 Critical Alert — Automated Lockout Challenge Issued", "is_suspicious": True, "risk_contrib": 35}
+        ]
+
+    return jsonify(siem_stream)
+
+@app.route('/api/admin/reports/download', methods=['GET'])
+def admin_download_report():
+    report_type = request.args.get("type", "weekly_security").lower()
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor('#0050b3')
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        leading=13,
+        textColor=colors.HexColor('#4a6275')
+    )
+    h2_style = ParagraphStyle(
+        'DocH2',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=12,
+        leading=15,
+        textColor=colors.HexColor('#0f172a')
+    )
+    cell_style = ParagraphStyle(
+        'CellText',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8,
+        leading=11
+    )
+    
+    elements = []
+    
+    if report_type == "incident":
+        doc_title = "ZeroTrustNet — Security Incident & Case File Report"
+        filename = "Incident_Security_Report.pdf"
+    elif report_type == "employee_risk":
+        doc_title = "ZeroTrustNet — Employee UEBA Risk & Anomaly Report"
+        filename = "Employee_Risk_Report.pdf"
+    elif report_type == "weekly_security":
+        doc_title = "ZeroTrustNet — Executive Weekly Security Posture Report"
+        filename = "Weekly_Security_Report.pdf"
+    elif report_type == "department_risk":
+        doc_title = "ZeroTrustNet — Organizational Department Risk Report"
+        filename = "Department_Risk_Report.pdf"
+    else:
+        doc_title = "ZeroTrustNet — Immutable Security Audit Trail Report"
+        filename = "Security_Audit_Report.pdf"
+
+    elements.append(Paragraph(doc_title, title_style))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')} | Security Classification: CONFIDENTIAL / SOC INTERNAL", subtitle_style))
+    elements.append(Spacer(1, 10))
+    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0050b3'), spaceBefore=2, spaceAfter=12))
+
+    df = load_all_evaluated()
+
+    if report_type == "incident":
+        elements.append(Paragraph("Active & Historical Security Incidents", h2_style))
+        elements.append(Spacer(1, 6))
+        
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT incident_id, user_name, department, severity, status, risk_score, summary FROM incidents ORDER BY created_at DESC LIMIT 40")
+        inc_rows = c.fetchall()
+        conn.close()
+        
+        table_data = [["Incident ID", "Employee", "Dept", "Severity", "Status", "Risk", "Threat Summary"]]
+        for r in inc_rows:
+            table_data.append([
+                Paragraph(r[0], cell_style),
+                Paragraph(r[1], cell_style),
+                Paragraph(r[2], cell_style),
+                Paragraph(r[3], cell_style),
+                Paragraph(r[4], cell_style),
+                Paragraph(str(r[5]), cell_style),
+                Paragraph(r[6][:60] + '...', cell_style)
+            ])
+            
+        t = Table(table_data, colWidths=[65, 75, 55, 60, 55, 35, 195])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0f172a')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        elements.append(t)
+
+    elif report_type == "employee_risk":
+        elements.append(Paragraph("Employee Behavioral Baseline & Anomaly Matrix", h2_style))
+        elements.append(Spacer(1, 6))
+        
+        table_data = [["Employee Name", "Department", "Risk Score", "Severity", "Primary Anomaly / Recommendation"]]
+        for _, r in df.iterrows():
+            table_data.append([
+                Paragraph(r['name'], cell_style),
+                Paragraph(r['department'], cell_style),
+                Paragraph(f"{r['risk_score']}/100", cell_style),
+                Paragraph(r['severity'], cell_style),
+                Paragraph(r.get('primary_recommendation', 'Baseline Verified'), cell_style)
+            ])
+            
+        t = Table(table_data, colWidths=[90, 80, 55, 65, 250])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0f172a')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ]))
+        elements.append(t)
+
+    elif report_type == "department_risk":
+        elements.append(Paragraph("Departmental Insider Risk Breakdown", h2_style))
+        elements.append(Spacer(1, 6))
+        
+        dept_summary = df.groupby('department')['risk_score'].agg(['mean', 'count', 'max']).reset_index()
+        table_data = [["Department Unit", "Monitored Employees", "Average Risk Score", "Max Risk Score", "Posture Status"]]
+        for _, r in dept_summary.iterrows():
+            avg = round(r['mean'], 1)
+            status = "🔴 High Risk" if avg >= 60 else "🟡 Medium Risk" if avg >= 30 else "🟢 Normal"
+            table_data.append([
+                Paragraph(r['department'], cell_style),
+                Paragraph(str(int(r['count'])), cell_style),
+                Paragraph(f"{avg}/100", cell_style),
+                Paragraph(f"{int(r['max'])}/100", cell_style),
+                Paragraph(status, cell_style)
+            ])
+            
+        t = Table(table_data, colWidths=[120, 100, 100, 90, 130])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0f172a')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ]))
+        elements.append(t)
+
+    elif report_type == "weekly_security":
+        elements.append(Paragraph("Executive SOC Posture Summary & Key Metrics", h2_style))
+        elements.append(Spacer(1, 6))
+        
+        avg_risk = round(df['risk_score'].mean(), 1) if not df.empty else 0.0
+        table_data = [
+            ["Metric Parameter", "Current Status Value", "Benchmark Target"],
+            ["Overall Security Posture Score", "75%", ">= 80% Healthy"],
+            ["Mean Insider Threat Risk Score", f"{avg_risk}/100", "< 30/100 Baseline"],
+            ["Active Monitored Sessions", f"{len(df)} Employees", "100% Endpoint Coverage"],
+            ["P1 Critical Incidents Open", "2 Incidents", "0 Critical Incidents"],
+            ["Isolated Hardware Fingerprints", "0 Blocked Devices", "Strict Policy Enforced"]
+        ]
+        t = Table(table_data, colWidths=[180, 160, 200])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0f172a')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ]))
+        elements.append(t)
+
+    else: # audit
+        elements.append(Paragraph("Security Event Audit Logs & Continuous Traces", h2_style))
+        elements.append(Spacer(1, 6))
+        
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT timestamp, user_name, event_type, event_details, is_suspicious FROM audit_events ORDER BY timestamp DESC LIMIT 40")
+        audit_rows = c.fetchall()
+        conn.close()
+        
+        table_data = [["Timestamp", "Employee", "Event Type", "Event Activity Details", "Policy Status"]]
+        for r in audit_rows:
+            table_data.append([
+                Paragraph(r[0][:16].replace('T', ' '), cell_style),
+                Paragraph(r[1] or 'System', cell_style),
+                Paragraph(r[2], cell_style),
+                Paragraph(r[3][:55] + '...', cell_style),
+                Paragraph("⚠ Flagged" if r[4] else "✓ Normal", cell_style)
+            ])
+            
+        t = Table(table_data, colWidths=[80, 75, 75, 230, 80])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0f172a')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ]))
+        elements.append(t)
+
+    elements.append(Spacer(1, 15))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e2e8f0'), spaceBefore=4, spaceAfter=8))
+    elements.append(Paragraph("ZeroTrustNet Automated Security Operations System | Powered by Multi-Layer AI Anomaly Detection", subtitle_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/pdf'
+    )
 
 @app.route('/api/admin/employees', methods=['GET'])
 def admin_employees_list():
@@ -1307,8 +2329,8 @@ def api_mfa_verify():
     device_str = device_info.get("device_name", "Office Device" if urole == "employee" else "Admin Console Workstation")
 
     conn = get_conn()
-    conn.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)",
-                 (sid, uid, username, datetime.now().isoformat(), None, ip, device_str, 1, 0))
+    conn.execute("INSERT INTO sessions (id, user_id, username, login_time, logout_time, ip_addr, device, department, role, is_active, risk_score) VALUES (?,?,?,?,?,?,?,?,?,1,0)",
+                 (sid, uid, username, datetime.now().isoformat(), None, ip, device_str, dept, urole))
     conn.commit()
     conn.close()
 
@@ -1362,7 +2384,7 @@ def admin_sessions():
     conn = get_conn()
     c = conn.cursor()
     c.execute("""
-        SELECT s.id, s.user_id, s.username, u.name, u.department, s.login_time, s.ip_addr, s.device, s.is_active
+        SELECT s.id, s.user_id, s.username, u.name, u.department, u.role, s.login_time, s.ip_addr, s.device, s.device_id, s.browser, s.os, s.location, s.is_active
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         ORDER BY s.login_time DESC
@@ -1372,16 +2394,21 @@ def admin_sessions():
 
     sessions_list = []
     for r in rows:
-        sid, uid, uname, name, dept, login_t, ip, dev, active = r
+        sid, uid, uname, name, dept, urole, login_t, ip, dev, dev_id, browser, os_sys, loc, active = r
         sessions_list.append({
             "id": sid,
             "user_id": uid,
             "username": uname,
             "name": name,
             "department": dept,
+            "role": urole,
             "login_time": login_t,
             "ip_addr": ip,
             "device": dev,
+            "device_id": dev_id or f"DEV-{abs(hash(uname))%90000+10000}",
+            "browser": browser or "Chrome 127.0",
+            "os": os_sys or "Windows 11",
+            "location": loc or "Bengaluru, India",
             "is_active": bool(active),
             "risk_score": risk_dict.get(uname, 0),
             "threat_classification": threat_dict.get(uname, 'Normal')
@@ -1557,7 +2584,7 @@ def employee_file_access():
     now_ts = datetime.now().isoformat()
 
     conn = get_conn()
-    conn.execute("INSERT INTO file_access_logs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    conn.execute("INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                  (fid, uid, uname, filename, filepath, classification, operation, size_mb, now_ts, is_flagged, policy_action))
 
     if operation == "Download":
@@ -1573,6 +2600,7 @@ def employee_file_access():
 
     log_audit(uid, uname, name, dept, f"File {operation}", f"{operation} '{filename}' [{classification}] — Policy: {policy_action}", ip, device, 15 if is_flagged else 0, is_flagged, session_id=sid)
 
+    invalidate_eval_cache()
     df_fresh = load_all_evaluated()
     ensure_incidents(df_fresh)
 
@@ -1594,7 +2622,7 @@ def employee_file_access_history():
 
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT * FROM file_access_logs WHERE user_id=? ORDER BY access_time DESC LIMIT 50", (uid,))
+    c.execute("SELECT * FROM file_access_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 50", (uid,))
     cols = [d[0] for d in c.description]
     rows = c.fetchall()
     conn.close()

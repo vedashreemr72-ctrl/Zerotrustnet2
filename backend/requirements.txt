@@ -4,3 +4,6 @@ PyJWT
 scikit-learn
 pandas
 numpy
+reportlab
+gunicorn
+

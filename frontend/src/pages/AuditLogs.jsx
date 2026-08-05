@@ -75,6 +75,7 @@ export default function AuditLogs({ token }) {
 
   const eventTypes = [
     "All", "Login", "Logout", "Login (MFA Verified)", "Step-Up MFA Verified", "File View", "File Download", "File Upload", 
+    "Delete File", "Open Confidential File", "Multiple Failed Actions", "Long Inactive Session", "Concurrent Login",
     "Sensitive Page Access", "GenAI Upload", "USB Event", "Privilege Change", 
     "Password Reset", "Incident Updated", "Attack Simulated", 
     "Policy Created", "Policy Changed", "Baseline Restored", "Account Locked", "Account Unlocked"

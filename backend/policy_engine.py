@@ -5,10 +5,13 @@ def evaluate_policy(conditions_json, user_metrics):
     Evaluates dynamic JSON conditions against user behavior metrics.
     Example conditions: {"device_known": 0, "off_hours": true}
     """
-    try:
-        conditions = json.loads(conditions_json)
-    except Exception:
-        return False
+    if isinstance(conditions_json, dict):
+        conditions = conditions_json
+    else:
+        try:
+            conditions = json.loads(conditions_json)
+        except Exception:
+            return False
 
     for key, value in conditions.items():
         if key == "device_known":

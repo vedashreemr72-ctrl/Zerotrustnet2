@@ -142,11 +142,8 @@ export default function ThreatDetection({ token }) {
                       <span>Calculated Unified Risk Rating</span>
                       <span style={{ fontWeight: 'bold' }}>{currentEmp.risk_score}/100</span>
                     </div>
-                    <div className="rb-track">
-                      <div className="rb-fill" style={{
-                        width: `${currentEmp.risk_score}%`,
-                        backgroundColor: currentEmp.risk_score >= 80 ? '#ef4444' : currentEmp.risk_score >= 60 ? '#f97316' : currentEmp.risk_score >= 30 ? '#eab308' : '#22c55e'
-                      }}></div>
+                    <div className="rb-bar" style={{ height: '8px', background: 'rgba(0,245,255,0.1)', borderRadius: '4px', overflow: 'hidden', marginTop: '6px' }}>
+                      <div className="rb-fill" style={{ height: '100%', width: `${currentEmp.risk_score}%`, backgroundColor: currentEmp.risk_score >= 80 ? '#ef4444' : currentEmp.risk_score >= 60 ? '#f97316' : '#22c55e', borderRadius: '4px' }}></div>
                     </div>
                   </div>
                 </div>
@@ -242,16 +239,36 @@ export default function ThreatDetection({ token }) {
                   </div>
                 </div>
 
-                <div className="zt-card" style={{ padding: '1rem', maxHeight: '250px', overflowY: 'auto' }}>
+                <div className="zt-card" style={{ padding: '1rem', maxHeight: '380px', overflowY: 'auto' }}>
                   <div style={{ fontSize: '0.72rem', color: '#3d5470', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
-                    Session Replay
+                    🔗 Sequential Behavioral Session Replay (Node Chain Flow)
                   </div>
-                  <div className="tl-wrap">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
                     {currentEmp.timeline.map((event, idx) => (
-                      <div key={idx} className={`tl-item ${event.flagged ? 'fl' : ''}`}>
-                        <div className="tl-t">{event.time}</div>
-                        <div className={`tl-d ${event.flagged ? 'fl-d' : ''}`}>{event.desc}</div>
-                      </div>
+                      <React.Fragment key={idx}>
+                        {idx > 0 && (
+                          <div style={{ color: '#00f5ff', fontSize: '1.1rem', fontWeight: 'bold', margin: '1px 0', textShadow: '0 0 6px rgba(0, 245, 255, 0.5)' }}>
+                            ↓
+                          </div>
+                        )}
+                        <div style={{
+                          width: '100%',
+                          padding: '0.5rem 0.75rem',
+                          background: event.flagged ? 'rgba(239, 68, 68, 0.08)' : 'rgba(15, 23, 42, 0.7)',
+                          border: `1px solid ${event.flagged ? 'rgba(239, 68, 68, 0.3)' : 'rgba(0, 245, 255, 0.15)'}`,
+                          borderRadius: '6px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '0.76rem'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>{event.desc.toLowerCase().includes('login') ? '🔑' : event.desc.toLowerCase().includes('payroll') ? '💼' : event.desc.toLowerCase().includes('finance') ? '📁' : event.desc.toLowerCase().includes('download') ? '📄' : event.desc.toLowerCase().includes('usb') ? '🔌' : event.desc.toLowerCase().includes('logout') ? '🚪' : '⚡'}</span>
+                            <span style={{ color: event.flagged ? '#f97316' : '#e2e8f0', fontWeight: event.flagged ? 'bold' : 'normal' }}>{event.desc}</span>
+                          </div>
+                          <span style={{ fontFamily: 'monospace', color: '#00f5ff', fontSize: '0.72rem' }}>{event.time}</span>
+                        </div>
+                      </React.Fragment>
                     ))}
                   </div>
                 </div>

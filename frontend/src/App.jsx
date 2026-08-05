@@ -10,6 +10,7 @@ import Forecast from './pages/Forecast';
 import AuditLogs from './pages/AuditLogs';
 import Sandbox from './pages/Sandbox';
 import EmployeeDashboard from './pages/EmployeeDashboard';
+import Reports from './pages/Reports';
 
 import { 
   LayoutDashboard, Users, AlertTriangle, ShieldAlert, Cpu, Zap, 
@@ -17,17 +18,55 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem('ztn_token') || '');
+  const [token, setToken] = useState(() => {
+    const t = localStorage.getItem('ztn_token');
+    return (t && t !== 'null' && t !== 'undefined') ? t : '';
+  });
   const [user, setUser] = useState(() => {
     try {
       const stored = localStorage.getItem('ztn_user');
-      return stored ? JSON.parse(stored) : null;
+      if (!stored || stored === 'null' || stored === 'undefined') return null;
+      return JSON.parse(stored);
     } catch {
       return null;
     }
   });
   const [page, setPage] = useState('dashboard');
   const [empData, setEmpData] = useState(null);
+
+  const handleLogout = async () => {
+    if (token) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } catch (e) {
+        console.warn("Logout request failed:", e);
+      }
+    }
+    setToken('');
+    setUser(null);
+    localStorage.removeItem('ztn_token');
+    localStorage.removeItem('ztn_user');
+  };
+
+  // Verify token validity with backend on app load
+  useEffect(() => {
+    if (token) {
+      fetch('/api/auth/verify', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => {
+        if (!res.ok) {
+          handleLogout();
+        }
+      })
+      .catch(() => {
+        // If network issue, allow component error handling
+      });
+    }
+  }, []);
 
   // Sync token to localStorage
   useEffect(() => {
@@ -62,6 +101,10 @@ export default function App() {
           const response = await fetch('/api/employee/dashboard', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
+          if (response.status === 401) {
+            handleLogout();
+            return;
+          }
           const res = await response.json();
           if (response.ok) {
             setEmpData(res);
@@ -81,21 +124,6 @@ export default function App() {
     setUser(newUser);
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-    } catch (e) {
-      console.warn("Logout request failed:", e);
-    }
-    setToken('');
-    setUser(null);
-    localStorage.removeItem('ztn_token');
-    localStorage.removeItem('ztn_user');
-  };
-
   if (!token || !user) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
@@ -103,33 +131,48 @@ export default function App() {
   // Render Page Content
   const renderContent = () => {
     if (user.role === 'admin') {
-      switch (page) {
-        case 'dashboard':
-          return <AdminDashboard token={token} user={user} />;
-        case 'ueba':
-          return <ThreatDetection token={token} />;
-        case 'incidents':
-          return <IncidentResponse token={token} />;
-        case 'policies':
-          return <PolicyEngine token={token} />;
-        case 'copilot':
-          return <AICopilot token={token} />;
-        case 'simulation':
-          return <AttackSimulation token={token} />;
-        case 'forecast':
-          return <Forecast token={token} />;
-        case 'audit':
-          return <AuditLogs token={token} />;
-        case 'sandbox':
-          return <Sandbox token={token} />;
-        default:
-          return <AdminDashboard token={token} user={user} />;
-      }
+      const validAdminPages = ['dashboard', 'ueba', 'incidents', 'policies', 'copilot', 'simulation', 'forecast', 'audit', 'reports', 'sandbox'];
+      const activePage = validAdminPages.includes(page) ? page : 'dashboard';
+
+      return (
+        <>
+          <div style={{ display: activePage === 'dashboard' ? 'block' : 'none' }}>
+            <AdminDashboard token={token} user={user} onLogout={handleLogout} />
+          </div>
+          <div style={{ display: activePage === 'ueba' ? 'block' : 'none' }}>
+            <ThreatDetection token={token} />
+          </div>
+          <div style={{ display: activePage === 'incidents' ? 'block' : 'none' }}>
+            <IncidentResponse token={token} />
+          </div>
+          <div style={{ display: activePage === 'policies' ? 'block' : 'none' }}>
+            <PolicyEngine token={token} />
+          </div>
+          <div style={{ display: activePage === 'copilot' ? 'block' : 'none' }}>
+            <AICopilot token={token} />
+          </div>
+          <div style={{ display: activePage === 'simulation' ? 'block' : 'none' }}>
+            <AttackSimulation token={token} />
+          </div>
+          <div style={{ display: activePage === 'forecast' ? 'block' : 'none' }}>
+            <Forecast token={token} />
+          </div>
+          <div style={{ display: activePage === 'audit' ? 'block' : 'none' }}>
+            <AuditLogs token={token} />
+          </div>
+          <div style={{ display: activePage === 'reports' ? 'block' : 'none' }}>
+            <Reports token={token} />
+          </div>
+          <div style={{ display: activePage === 'sandbox' ? 'block' : 'none' }}>
+            <Sandbox token={token} />
+          </div>
+        </>
+      );
     } else {
       // Employee portal switcher
       switch (page) {
         case 'emp_dashboard':
-          return <EmployeeDashboard token={token} user={user} onPageChange={setPage} />;
+          return <EmployeeDashboard token={token} user={user} onPageChange={setPage} onLogout={handleLogout} />;
         
         case 'emp_timeline':
           return (
@@ -311,10 +354,12 @@ export default function App() {
       <div className="zt-sidebar">
         <div className="sb-logo">
           <div className="brand">🛡️ ZeroTrustNet</div>
-          <div className="tagline">{user.role === 'admin' ? 'SOC operations' : 'Employee portal'}</div>
-          <div className="status">
+          <div className="tagline" style={{ fontSize: '0.66rem', lineHeight: '1.25', color: '#38bdf8', marginTop: '3px' }}>
+            AI Zero Trust Access Verification & Insider Threat Platform
+          </div>
+          <div className="status" style={{ marginTop: '6px' }}>
             <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', boxShadow: '0 0 5px #22c55e' }}></span>
-            {user.role === 'admin' ? 'System Operational' : 'Session Encrypted'}
+            {user.role === 'admin' ? 'SOC Engine Active' : 'Session Verified'}
           </div>
         </div>
 
@@ -351,6 +396,9 @@ export default function App() {
               </button>
               <button className={`nav-item ${page === 'audit' ? 'active' : ''}`} onClick={() => setPage('audit')}>
                 <FileText size={16} /> Immutable Audits
+              </button>
+              <button className={`nav-item ${page === 'reports' ? 'active' : ''}`} onClick={() => setPage('reports')}>
+                <FileText size={16} /> Reports & PDF Exporter
               </button>
               <button className={`nav-item ${page === 'sandbox' ? 'active' : ''}`} onClick={() => setPage('sandbox')}>
                 <HelpCircle size={16} /> Risk Sandbox
