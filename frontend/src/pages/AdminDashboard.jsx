@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity } from 'lucide-react';
+import SecurityTrendGraph from '../components/SecurityTrendGraph';
 
 export default function AdminDashboard({ token, user, onLogout }) {
   const [data, setData] = useState(null);
@@ -337,41 +338,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
               )}
             </div>
 
-            <div className="zt-section-title">
-              <TrendingUp size={18} /> Corporate Security Score Trend (Weekly)
-            </div>
-            <div className="zt-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', height: '140px', padding: '1rem 2rem 0 2rem' }}>
-                {trend.map((score, idx) => {
-                  const height = `${score}%`;
-                  const label = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri (Today)'][idx];
-                  return (
-                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                      <div style={{ fontSize: '0.78rem', color: '#00f5ff', fontWeight: 'bold', marginBottom: '4px' }}>
-                        {score}%
-                      </div>
-                      <div style={{
-                        width: '60%',
-                        height: '80px',
-                        background: 'rgba(0, 245, 255, 0.08)',
-                        border: '1px solid rgba(0, 245, 255, 0.2)',
-                        borderRadius: '4px 4px 0 0',
-                        position: 'relative',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          position: 'absolute',
-                          bottom: 0, left: 0, right: 0,
-                          height: height,
-                          background: 'linear-gradient(0deg, #0050b3 0%, #00f5ff 100%)',
-                          boxShadow: '0 0 10px rgba(0, 245, 255, 0.4)'
-                        }}></div>
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: '#4a6275', marginTop: '6px' }}>{label}</div>
-                    </div>
-                  );
-                })}
-              </div>
+            <div style={{ marginTop: '1.25rem', marginBottom: '1.25rem' }}>
+              <SecurityTrendGraph trend={trend} />
             </div>
           </div>
 

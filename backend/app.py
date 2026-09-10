@@ -27,9 +27,9 @@ if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
         pass
 
 from ml_engine import calculate_risk, get_recommendations, run_ml_engine
-from policy_engine import evaluate_policy
+FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=FRONTEND_DIST if os.path.exists(FRONTEND_DIST) else None, static_url_path='')
 CORS(app)
 
 SECRET_KEY = "ZTN_SUPER_SECRET_KEY_CYBER_2026"
@@ -191,8 +191,17 @@ def init_db():
         message      TEXT NOT NULL,
         severity     TEXT DEFAULT 'High',
         sent_at      TEXT NOT NULL,
-        status       TEXT DEFAULT 'Dispatched'
+        status       TEXT DEFAULT 'Dispatched',
+        is_read      INTEGER DEFAULT 0
     )""")
+
+    c.execute("PRAGMA table_info(notifications)")
+    existing_notif_cols = [col[1] for col in c.fetchall()]
+    if 'is_read' not in existing_notif_cols:
+        try:
+            c.execute("ALTER TABLE notifications ADD COLUMN is_read INTEGER DEFAULT 0")
+        except Exception:
+            pass
 
     c.execute("""CREATE TABLE IF NOT EXISTS file_access_logs (
         id             TEXT PRIMARY KEY,
@@ -341,6 +350,24 @@ def _log_event(conn, user_id, username, user_name, department, event_type, event
     c.execute("INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid.uuid4()), user_id, username, user_name, department,
                ts, event_type, event_details, ip, device, risk_contrib, is_suspicious, session_id or ""))
+
+    # Automatically dispatch real-time enterprise notification for every activity
+    try:
+        nid = str(uuid.uuid4())
+        sev = "Critical" if (is_suspicious and (risk_contrib or 0) >= 15) else (
+            "High" if (is_suspicious or (risk_contrib or 0) > 5) else (
+                "Medium" if (risk_contrib or 0) > 0 else "Low"
+            )
+        )
+        channel = "SMS/Push" if sev in ["Critical", "High"] else "System"
+        subj = f"[{sev.upper()}] {event_type} - {user_name or username} ({department or 'General'})"
+        msg = f"{user_name or username} ({department or 'Staff'}) performed '{event_type}' on {device or 'Authorized Device'} [IP: {ip or '127.0.0.1'}]. {event_details}"
+        c.execute("""
+            INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+            VALUES (?,?,?,?,?,?,?,?,?,?,0)
+        """, (nid, user_id or "system", username or "system", channel, "soc-alert@zerotrustnet.io", subj, msg, sev, ts, "Dispatched"))
+    except Exception:
+        pass
 
 def seed_db():
     conn = get_conn()
@@ -730,11 +757,21 @@ def api_login():
     
     if not row:
         conn.close()
+        client_ip = data.get("ip_addr") or request.remote_addr or "127.0.0.1"
+        client_browser = data.get("browser") or request.headers.get("User-Agent", "Web Client")
+        log_audit("unknown", username, username, "External", "Failed Authentication",
+                  f"Failed login attempt for account '{username}'. Invalid credentials entered.",
+                  client_ip, client_browser, risk_contrib=20, is_suspicious=1)
         return jsonify({"error": "Invalid username or password"}), 401
 
     uid, name, dept, emp_type, urole, is_active = row
     if not is_active:
         conn.close()
+        client_ip = data.get("ip_addr") or request.remote_addr or "127.0.0.1"
+        client_browser = data.get("browser") or request.headers.get("User-Agent", "Web Client")
+        log_audit(uid, username, name, dept, "Locked Account Access Attempt",
+                  f"Disabled employee account '{username}' attempted login.",
+                  client_ip, client_browser, risk_contrib=25, is_suspicious=1)
         return jsonify({"error": "Account is disabled"}), 403
 
     if urole != role_req:
@@ -2546,12 +2583,47 @@ def admin_notifications_send():
     nid = str(uuid.uuid4())
     ts = datetime.now().isoformat()
     conn = get_conn()
-    conn.execute("INSERT INTO notifications VALUES (?,?,?,?,?,?,?,?,?,?)",
-                 (nid, payload["user_id"], analyst, channel, recipient, subject, message, "High", ts, "Dispatched"))
+    conn.execute("""
+        INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+        VALUES (?,?,?,?,?,?,?,?,?,?,0)
+    """, (nid, payload["user_id"], analyst, channel, recipient, subject, message, "High", ts, "Dispatched"))
     conn.commit()
     conn.close()
 
     return jsonify({"success": True, "message": f"{channel} alert dispatched to {recipient}."})
+
+@app.route('/api/admin/notifications/mark-read', methods=['POST'])
+def admin_notifications_mark_read():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    data = request.json or {}
+    nid = data.get("id", "all")
+    conn = get_conn()
+    if nid == "all":
+        conn.execute("UPDATE notifications SET is_read=1")
+    else:
+        conn.execute("UPDATE notifications SET is_read=1 WHERE id=?", (nid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+@app.route('/api/admin/notifications/clear', methods=['POST'])
+def admin_notifications_clear():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    conn.execute("DELETE FROM notifications")
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 # ── FILE ACCESS MONITORING & DEVICE TRUST ──────────────────────────────────────
 
@@ -2651,12 +2723,29 @@ def admin_device_trust():
         })
     return jsonify(devices)
 
+# ── FRONTEND STATIC SERVING (SINGLE-LINK FULLSTACK) ─────────────────────────
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    if path.startswith('api/'):
+        return jsonify({"error": "Endpoint not found"}), 404
+    if app.static_folder and os.path.exists(os.path.join(app.static_folder, path)) and path != "":
+        return send_file(os.path.join(app.static_folder, path))
+    if app.static_folder and os.path.exists(os.path.join(app.static_folder, 'index.html')):
+        return send_file(os.path.join(app.static_folder, 'index.html'))
+    return jsonify({"message": "ZeroTrustNet API Server is running. Build frontend with 'npm run build' inside frontend/ directory."})
+
 # ── RUN INITIALIZATION ─────────────────────────────────────────────────────────
 
-if __name__ == '__main__':
+try:
     init_db()
     seed_db()
     df_init = load_all_evaluated()
     ensure_incidents(df_init)
-    
-    app.run(host='0.0.0.0', port=5000, debug=True)
+except Exception as e:
+    print(f"Startup initialization notice: {e}")
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)

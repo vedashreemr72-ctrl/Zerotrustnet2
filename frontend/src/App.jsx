@@ -11,6 +11,7 @@ import AuditLogs from './pages/AuditLogs';
 import Sandbox from './pages/Sandbox';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import Reports from './pages/Reports';
+import NotificationCenter from './components/NotificationCenter';
 
 import { 
   LayoutDashboard, Users, AlertTriangle, ShieldAlert, Cpu, Zap, 
@@ -431,6 +432,45 @@ export default function App() {
 
       {/* Main Content Dispatcher */}
       <div className="zt-main-content">
+        {user && user.role === 'admin' && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '0.65rem 1.25rem',
+            marginBottom: '1.25rem',
+            background: 'linear-gradient(90deg, rgba(13, 27, 62, 0.65) 0%, rgba(3, 9, 30, 0.8) 100%)',
+            border: '1px solid rgba(0, 245, 255, 0.2)',
+            borderRadius: '10px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.74rem',
+                color: '#10b981',
+                background: 'rgba(16, 185, 129, 0.12)',
+                padding: '3px 10px',
+                borderRadius: '20px',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                fontWeight: 600
+              }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981', animation: 'pulse 1.8s infinite' }}></span>
+                Continuous SOC Telemetry Active
+              </div>
+              <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                • Auto-syncing enterprise employee activities & threat telemetry
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <NotificationCenter token={token} />
+            </div>
+          </div>
+        )}
         {renderContent()}
       </div>
     </div>

@@ -1,23 +1,10 @@
 services:
-  # Python Flask Backend API Service
   - type: web
-    name: zerotrustnet-backend
+    name: zerotrustnet
     env: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    buildCommand: ./build.sh
+    startCommand: gunicorn --chdir backend app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
 
-  # React Vite Frontend Static Web Service
-  - type: web
-    name: zerotrustnet-frontend
-    env: static
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html

@@ -642,3 +642,15 @@ body::before {
   color: #c8d6e8;
   align-self: flex-start;
 }
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
