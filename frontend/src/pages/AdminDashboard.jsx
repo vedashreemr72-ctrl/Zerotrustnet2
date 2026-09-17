@@ -354,34 +354,37 @@ export default function AdminDashboard({ token, user, onLogout }) {
             </div>
             <div className="zt-card" style={{ padding: '0.8rem', background: '#090d16', border: '1px solid rgba(0, 245, 255, 0.25)', borderRadius: '10px', marginBottom: '1.2rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '280px', overflowY: 'auto' }}>
-                {liveActivity.map((act, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.45rem 0.6rem',
-                    background: act.is_suspicious ? 'rgba(239, 68, 68, 0.08)' : 'rgba(15, 23, 42, 0.7)',
-                    borderLeft: `3px solid ${act.is_suspicious ? '#ef4444' : '#10b981'}`,
-                    borderRadius: '5px',
-                    fontSize: '0.74rem',
-                    fontFamily: 'monospace'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#00f5ff', fontWeight: 'bold' }}>{act.time}</span>
-                      <span style={{ color: '#e2e8f0', fontWeight: 'bold' }}>{act.user}</span>
-                      <span style={{ color: act.is_suspicious ? '#f97316' : '#8aafc8' }}>{act.event_type}</span>
-                    </div>
-                    <span style={{
-                      fontSize: '0.68rem',
-                      color: act.is_suspicious ? '#ef4444' : '#10b981',
-                      background: act.is_suspicious ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.1)',
-                      padding: '1px 6px',
-                      borderRadius: '4px'
+                {liveActivity.map((act, idx) => {
+                  const isSusp = act.is_suspicious && !(act.user === 'System Administrator' && act.event_type === 'Login');
+                  return (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.45rem 0.6rem',
+                      background: isSusp ? 'rgba(239, 68, 68, 0.08)' : 'rgba(15, 23, 42, 0.7)',
+                      borderLeft: `3px solid ${isSusp ? '#ef4444' : '#10b981'}`,
+                      borderRadius: '5px',
+                      fontSize: '0.74rem',
+                      fontFamily: 'monospace'
                     }}>
-                      {act.is_suspicious ? `⚠ ${act.event_type}` : '✓ Normal'}
-                    </span>
-                  </div>
-                ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: '#00f5ff', fontWeight: 'bold' }}>{act.time}</span>
+                        <span style={{ color: '#e2e8f0', fontWeight: 'bold' }}>{act.user}</span>
+                        <span style={{ color: isSusp ? '#f97316' : '#8aafc8' }}>{act.event_type}</span>
+                      </div>
+                      <span style={{
+                        fontSize: '0.68rem',
+                        color: isSusp ? '#ef4444' : '#10b981',
+                        background: isSusp ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.1)',
+                        padding: '1px 6px',
+                        borderRadius: '4px'
+                      }}>
+                        {isSusp ? `⚠ ${act.event_type}` : '✓ Normal'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Sun, Moon, Monitor, Smartphone } from 'lucide-react';
 
 const detectBrowser = () => {
   const ua = navigator.userAgent;
@@ -26,7 +27,13 @@ const getDeviceId = () => {
   return devId;
 };
 
-export default function Login({ onLoginSuccess }) {
+export default function Login({ 
+  onLoginSuccess,
+  theme = 'dark',
+  onToggleTheme,
+  siteMode = 'desktop',
+  onToggleSiteMode
+}) {
   const [activeTab, setActiveTab] = useState('admin'); // 'admin' or 'employee'
   const [mode, setMode] = useState('login'); // 'login' or 'register'
 
@@ -132,6 +139,26 @@ export default function Login({ onLoginSuccess }) {
 
   return (
     <div className="login-wrap">
+      {/* Top Header Icons: Theme (Light/Dark) */}
+      <div className="login-header-controls">
+        {onToggleTheme && (
+          <button 
+            type="button" 
+            className={`hdr-icon-btn theme-btn ${theme === 'dark' ? 'is-dark' : 'is-light'}`}
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            aria-label="Toggle theme mode"
+          >
+            {theme === 'dark' ? (
+              <Sun size={18} className="theme-icon sun-icon" />
+            ) : (
+              <Moon size={18} className="theme-icon moon-icon" />
+            )}
+            <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+          </button>
+        )}
+      </div>
+
       <div className="zt-card login-card" style={{ maxWidth: '460px', width: '100%' }}>
         <div className="login-hero" style={{ textAlign: 'center' }}>
           <div className="logo" style={{ fontSize: '1.6rem', fontWeight: '800' }}>🛡️ ZeroTrustNet</div>

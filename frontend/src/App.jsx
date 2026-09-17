@@ -12,10 +12,12 @@ import Sandbox from './pages/Sandbox';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import Reports from './pages/Reports';
 import NotificationCenter from './components/NotificationCenter';
+import GlobalHeader from './components/GlobalHeader';
 
 import { 
   LayoutDashboard, Users, AlertTriangle, ShieldAlert, Cpu, Zap, 
-  TrendingUp, FileText, HelpCircle, LogOut, Clock, ShieldCheck 
+  TrendingUp, FileText, HelpCircle, LogOut, Clock, ShieldCheck,
+  Sun, Moon, Monitor, Smartphone, Menu, X
 } from 'lucide-react';
 
 export default function App() {
@@ -34,6 +36,48 @@ export default function App() {
   });
   const [page, setPage] = useState('dashboard');
   const [empData, setEmpData] = useState(null);
+
+  // Theme (Dark / Light) State
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('ztn_theme') || 'dark';
+  });
+
+  // Site Mode (Desktop Site / Mobile Site) State
+  const [siteMode, setSiteMode] = useState(() => {
+    return localStorage.getItem('ztn_site_mode') || 'desktop';
+  });
+
+  // Mobile Drawer Navigation State
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Sync theme to document root
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('ztn_theme', theme);
+  }, [theme]);
+
+  // Sync site mode to document root
+  useEffect(() => {
+    document.documentElement.setAttribute('data-site-mode', siteMode);
+    localStorage.setItem('ztn_site_mode', siteMode);
+  }, [siteMode]);
+
+  const handleToggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const handleToggleSiteMode = () => {
+    setSiteMode(prev => (prev === 'desktop' ? 'mobile' : 'desktop'));
+  };
+
+  const handleToggleMobileNav = () => {
+    setMobileNavOpen(prev => !prev);
+  };
+
+  const handlePageSelect = (targetPage) => {
+    setPage(targetPage);
+    setMobileNavOpen(false);
+  };
 
   const handleLogout = async () => {
     if (token) {
@@ -126,7 +170,15 @@ export default function App() {
   };
 
   if (!token || !user) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <Login 
+        onLoginSuccess={handleLoginSuccess} 
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        siteMode={siteMode}
+        onToggleSiteMode={handleToggleSiteMode}
+      />
+    );
   }
 
   // Render Page Content
@@ -350,9 +402,17 @@ export default function App() {
   };
 
   return (
-    <div className="zt-container">
+    <div className={`zt-container ${siteMode === 'mobile' ? 'site-mode-mobile' : 'site-mode-desktop'}`}>
+      {/* Mobile Drawer Backdrop */}
+      {mobileNavOpen && (
+        <div 
+          className="mobile-drawer-backdrop" 
+          onClick={() => setMobileNavOpen(false)} 
+        />
+      )}
+
       {/* Navigation Sidebar */}
-      <div className="zt-sidebar">
+      <div className={`zt-sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
         <div className="sb-logo">
           <div className="brand">🛡️ ZeroTrustNet</div>
           <div className="tagline" style={{ fontSize: '0.66rem', lineHeight: '1.25', color: '#38bdf8', marginTop: '3px' }}>
@@ -374,46 +434,46 @@ export default function App() {
         <div className="nav-menu">
           {user.role === 'admin' ? (
             <>
-              <button className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}>
+              <button className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('dashboard')}>
                 <LayoutDashboard size={16} /> SOC Dashboard
               </button>
-              <button className={`nav-item ${page === 'ueba' ? 'active' : ''}`} onClick={() => setPage('ueba')}>
+              <button className={`nav-item ${page === 'ueba' ? 'active' : ''}`} onClick={() => handlePageSelect('ueba')}>
                 <Users size={16} /> Threat Detection & UEBA
               </button>
-              <button className={`nav-item ${page === 'incidents' ? 'active' : ''}`} onClick={() => setPage('incidents')}>
+              <button className={`nav-item ${page === 'incidents' ? 'active' : ''}`} onClick={() => handlePageSelect('incidents')}>
                 <AlertTriangle size={16} /> Incident Cases
               </button>
-              <button className={`nav-item ${page === 'policies' ? 'active' : ''}`} onClick={() => setPage('policies')}>
+              <button className={`nav-item ${page === 'policies' ? 'active' : ''}`} onClick={() => handlePageSelect('policies')}>
                 <ShieldAlert size={16} /> Trust Policies
               </button>
-              <button className={`nav-item ${page === 'copilot' ? 'active' : ''}`} onClick={() => setPage('copilot')}>
+              <button className={`nav-item ${page === 'copilot' ? 'active' : ''}`} onClick={() => handlePageSelect('copilot')}>
                 <Cpu size={16} /> AI Security Copilot
               </button>
-              <button className={`nav-item ${page === 'simulation' ? 'active' : ''}`} onClick={() => setPage('simulation')}>
+              <button className={`nav-item ${page === 'simulation' ? 'active' : ''}`} onClick={() => handlePageSelect('simulation')}>
                 <Zap size={16} /> Attack Simulation
               </button>
-              <button className={`nav-item ${page === 'forecast' ? 'active' : ''}`} onClick={() => setPage('forecast')}>
+              <button className={`nav-item ${page === 'forecast' ? 'active' : ''}`} onClick={() => handlePageSelect('forecast')}>
                 <TrendingUp size={16} /> Projections & Forecast
               </button>
-              <button className={`nav-item ${page === 'audit' ? 'active' : ''}`} onClick={() => setPage('audit')}>
+              <button className={`nav-item ${page === 'audit' ? 'active' : ''}`} onClick={() => handlePageSelect('audit')}>
                 <FileText size={16} /> Immutable Audits
               </button>
-              <button className={`nav-item ${page === 'reports' ? 'active' : ''}`} onClick={() => setPage('reports')}>
+              <button className={`nav-item ${page === 'reports' ? 'active' : ''}`} onClick={() => handlePageSelect('reports')}>
                 <FileText size={16} /> Reports & PDF Exporter
               </button>
-              <button className={`nav-item ${page === 'sandbox' ? 'active' : ''}`} onClick={() => setPage('sandbox')}>
+              <button className={`nav-item ${page === 'sandbox' ? 'active' : ''}`} onClick={() => handlePageSelect('sandbox')}>
                 <HelpCircle size={16} /> Risk Sandbox
               </button>
             </>
           ) : (
             <>
-              <button className={`nav-item ${page === 'emp_dashboard' ? 'active' : ''}`} onClick={() => setPage('emp_dashboard')}>
+              <button className={`nav-item ${page === 'emp_dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_dashboard')}>
                 <LayoutDashboard size={16} /> My Portal
               </button>
-              <button className={`nav-item ${page === 'emp_timeline' ? 'active' : ''}`} onClick={() => setPage('emp_timeline')}>
+              <button className={`nav-item ${page === 'emp_timeline' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_timeline')}>
                 <Clock size={16} /> My Session Timeline
               </button>
-              <button className={`nav-item ${page === 'emp_security' ? 'active' : ''}`} onClick={() => setPage('emp_security')}>
+              <button className={`nav-item ${page === 'emp_security' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_security')}>
                 <ShieldCheck size={16} /> My Security Standing
               </button>
             </>
@@ -424,7 +484,7 @@ export default function App() {
           <button className="nav-item critical" onClick={handleLogout} style={{ border: '1px solid rgba(239, 68, 68, 0.25)' }}>
             <LogOut size={16} /> Log Out Session
           </button>
-          <div style={{ fontSize: '0.6rem', color: '#2d4060', textAlign: 'center', marginTop: '0.8rem', letterSpacing: '0.5px' }}>
+          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.75rem', letterSpacing: '0.5px', lineHeight: '1.4' }}>
             ZeroTrustNet v5.0<br />Never Trust · Always Verify
           </div>
         </div>
@@ -432,45 +492,20 @@ export default function App() {
 
       {/* Main Content Dispatcher */}
       <div className="zt-main-content">
-        {user && user.role === 'admin' && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '0.65rem 1.25rem',
-            marginBottom: '1.25rem',
-            background: 'linear-gradient(90deg, rgba(13, 27, 62, 0.65) 0%, rgba(3, 9, 30, 0.8) 100%)',
-            border: '1px solid rgba(0, 245, 255, 0.2)',
-            borderRadius: '10px',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
-            position: 'relative'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.74rem',
-                color: '#10b981',
-                background: 'rgba(16, 185, 129, 0.12)',
-                padding: '3px 10px',
-                borderRadius: '20px',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                fontWeight: 600
-              }}>
-                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981', animation: 'pulse 1.8s infinite' }}></span>
-                Continuous SOC Telemetry Active
-              </div>
-              <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                • Auto-syncing enterprise employee activities & threat telemetry
-              </span>
-            </div>
+        {/* Global Top Header Bar with Theme & Site Mode Icons on Every Page */}
+        <GlobalHeader 
+          user={user}
+          token={token}
+          page={page}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+          siteMode={siteMode}
+          onToggleSiteMode={handleToggleSiteMode}
+          mobileNavOpen={mobileNavOpen}
+          onToggleMobileNav={handleToggleMobileNav}
+          onLogout={handleLogout}
+        />
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <NotificationCenter token={token} />
-            </div>
-          </div>
-        )}
         {renderContent()}
       </div>
     </div>

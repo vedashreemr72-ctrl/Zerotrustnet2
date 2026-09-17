@@ -90,7 +90,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
   const activeStatus = getScoreStatus(activePoint.score);
 
   return (
-    <div className="zt-card" style={{
+    <div className="zt-card zt-trend-graph-card" style={{
       background: 'linear-gradient(180deg, rgba(13, 27, 62, 0.7) 0%, rgba(3, 9, 30, 0.85) 100%)',
       border: '1px solid rgba(0, 245, 255, 0.25)',
       borderRadius: '12px',
@@ -127,7 +127,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
 
         {/* Quick KPI badges */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <div style={{
+          <div className="zt-kpi-pill" style={{
             background: 'rgba(15, 23, 42, 0.7)',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: '8px',
@@ -138,7 +138,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
             <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#e2e8f0' }}>{avgScore}%</div>
           </div>
 
-          <div style={{
+          <div className="zt-kpi-pill" style={{
             background: 'rgba(15, 23, 42, 0.7)',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: '8px',
@@ -216,6 +216,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
                   strokeWidth={isBaseline ? '1.2' : '1'}
                 />
                 <text
+                  className={`chart-axis-level ${isBaseline ? 'baseline' : ''}`}
                   x={padLeft - 10}
                   y={yPos + 4}
                   textAnchor="end"
@@ -232,6 +233,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
 
           {/* Baseline compliance label on right edge */}
           <text
+            className="chart-baseline-text"
             x={svgWidth - padRight}
             y={baselineY - 6}
             textAnchor="end"
@@ -326,6 +328,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
 
                 {/* Main node point */}
                 <circle
+                  className={`chart-node-point ${isHovered ? 'hovered' : ''}`}
                   cx={p.x}
                   cy={p.y}
                   r={isHovered ? '5.5' : '4.5'}
@@ -337,6 +340,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
                 {/* Score badge above node */}
                 <g transform={`translate(${p.x}, ${p.y - 14})`}>
                   <rect
+                    className={`chart-score-badge-bg ${isHovered ? 'hovered' : ''}`}
                     x="-18"
                     y="-16"
                     width="36"
@@ -347,6 +351,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
                     strokeWidth="1"
                   />
                   <text
+                    className={`chart-score-badge-text ${isHovered ? 'hovered' : ''}`}
                     x="0"
                     y="-4"
                     textAnchor="middle"
@@ -361,6 +366,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
 
                 {/* X-axis Day labels */}
                 <text
+                  className={`chart-day-label ${isHovered ? 'hovered' : ''} ${isToday ? 'today' : ''}`}
                   x={p.x}
                   y={chartBottomY + 22}
                   textAnchor="middle"
@@ -378,7 +384,7 @@ export default function SecurityTrendGraph({ trend = [92, 88, 95, 84, 84] }) {
 
         {/* Floating Cyber Telemetry Info Pill for Active/Hovered Point */}
         {activePoint && (
-          <div style={{
+          <div className="zt-telemetry-pill" style={{
             marginTop: '0.4rem',
             background: 'rgba(15, 23, 42, 0.85)',
             border: `1px solid ${activeStatus.border}`,
