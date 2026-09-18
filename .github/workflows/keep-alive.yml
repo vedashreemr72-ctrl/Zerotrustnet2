@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Send keep-alive HTTP request
         env:
-          TARGET_URL: ${{ vars.RENDER_APP_URL || secrets.RENDER_APP_URL || 'https://zerotrustnet.onrender.com' }}
+          TARGET_URL: ${{ vars.RENDER_APP_URL || secrets.RENDER_APP_URL || 'https://zerotrustnet-lcz0.onrender.com' }}
         run: |
           echo "Pinging service at $TARGET_URL to prevent idle spin-down..."
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L "$TARGET_URL" || echo "000")
