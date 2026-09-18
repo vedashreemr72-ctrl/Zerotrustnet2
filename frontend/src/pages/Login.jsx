@@ -79,7 +79,17 @@ export default function Login({
         })
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        throw new Error(
+          response.status === 404
+            ? "Backend API endpoint not found (404). Please ensure your backend service is deployed and vercel.json destination URL is configured."
+            : `Backend connection error (${response.status} ${response.statusText || ''}). Please check if the backend server is running.`
+        );
+      }
+
       if (!response.ok) {
         throw new Error(data.error || 'Login failed');
       }
@@ -112,7 +122,17 @@ export default function Login({
         })
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        throw new Error(
+          response.status === 404
+            ? "Backend API endpoint not found (404). Please ensure your backend service is deployed and vercel.json destination URL is configured."
+            : `Backend connection error (${response.status} ${response.statusText || ''}). Please check if the backend server is running.`
+        );
+      }
+
       if (!response.ok) {
         throw new Error(data.error || 'Registration failed');
       }
