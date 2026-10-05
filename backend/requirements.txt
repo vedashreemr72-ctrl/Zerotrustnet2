@@ -6,4 +6,8 @@ pandas
 numpy
 reportlab
 gunicorn
+python-dotenv
+twilio
+supabase
+
 

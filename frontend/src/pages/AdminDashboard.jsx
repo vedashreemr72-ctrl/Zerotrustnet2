@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity } from 'lucide-react';
+import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
 
 export default function AdminDashboard({ token, user, onLogout }) {
@@ -9,10 +9,19 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [notifications, setNotifications] = useState([]);
   const [deviceTrust, setDeviceTrust] = useState([]);
   const [liveActivity, setLiveActivity] = useState([]);
+  const [mfaEvents, setMfaEvents] = useState([]);
+  const [trustedDevices, setTrustedDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sessions', 'employees', 'notifications', 'devices'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sessions', 'employees', 'notifications', 'devices', 'mfa_events'
   const [actionMsg, setActionMsg] = useState('');
+
+  // Step-Up MFA Modal state
+  const [stepUpModalOpen, setStepUpModalOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [stepUpOtp, setStepUpOtp] = useState('');
+  const [stepUpLoading, setStepUpLoading] = useState(false);
+  const [stepUpError, setStepUpError] = useState('');
 
   const parseJsonSafe = async (res) => {
     const text = await res.text();
@@ -25,13 +34,15 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   const fetchSOCData = async () => {
     try {
-      const [dashRes, empRes, sessRes, notifRes, devRes, liveRes] = await Promise.all([
+      const [dashRes, empRes, sessRes, notifRes, devRes, liveRes, mfaRes, trustDevRes] = await Promise.all([
         fetch('/api/admin/dashboard', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/sessions', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/notifications', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/device-trust', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/admin/live-activity', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/admin/live-activity', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/auth/mfa-events', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/auth/trusted-devices', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
       if (dashRes.status === 401) {
@@ -45,6 +56,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
       const notifData = await parseJsonSafe(notifRes);
       const devData = await parseJsonSafe(devRes);
       const liveData = await parseJsonSafe(liveRes);
+      const mfaData = mfaRes.ok ? await parseJsonSafe(mfaRes) : [];
+      const trustDevData = trustDevRes.ok ? await parseJsonSafe(trustDevRes) : [];
 
       if (!dashRes.ok) {
         if (dashData.error === 'Invalid token' && onLogout) {
@@ -60,6 +73,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
       setNotifications(notifData || []);
       setDeviceTrust(devData || []);
       setLiveActivity(liveData || []);
+      setMfaEvents(mfaData || []);
+      setTrustedDevices(trustDevData || []);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -74,49 +89,114 @@ export default function AdminDashboard({ token, user, onLogout }) {
     return () => clearInterval(interval);
   }, [token]);
 
-  const handleToggleLock = async (userId, employeeName) => {
-    setActionMsg('');
+  const triggerStepUp = (action) => {
+    setPendingAction(action);
+    setStepUpOtp('');
+    setStepUpError('');
+    setStepUpModalOpen(true);
+  };
+
+  const handleStepUpVerifyAndExecute = async (e) => {
+    if (e) e.preventDefault();
+    if (!stepUpOtp || stepUpOtp.trim().length !== 6) {
+      setStepUpError('Please enter a valid 6-digit Step-Up MFA OTP code.');
+      return;
+    }
+    setStepUpLoading(true);
+    setStepUpError('');
     try {
-      const res = await fetch(`/api/admin/users/${userId}/toggle-lock`, {
+      const vRes = await fetch('/api/auth/stepup-verify', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          otp_code: stepUpOtp.trim(),
+          action_name: pendingAction?.title || 'Admin Sensitive Action'
+        })
       });
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || 'Lock toggling failed');
-      setActionMsg(`✅ ${resData.message}`);
+      const vData = await vRes.json();
+      if (!vRes.ok) throw new Error(vData.error || 'Step-up verification failed');
+
+      if (!pendingAction) return;
+
+      if (pendingAction.type === 'terminate_session') {
+        const { sessionId, username } = pendingAction.payload;
+        const res = await fetch(`/api/admin/sessions/${sessionId}/terminate`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const resData = await res.json();
+        if (!res.ok) throw new Error(resData.error || 'Session termination failed');
+        setActionMsg(`✅ Step-Up Authorized: Session for ${username} terminated.`);
+      } else if (pendingAction.type === 'toggle_lock') {
+        const { userId } = pendingAction.payload;
+        const res = await fetch(`/api/admin/users/${userId}/toggle-lock`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const resData = await res.json();
+        if (!res.ok) throw new Error(resData.error || 'Lock toggling failed');
+        setActionMsg(`✅ Step-Up Authorized: ${resData.message}`);
+      } else if (pendingAction.type === 'reset_system') {
+        const res = await fetch('/api/admin/reset-system', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const resData = await res.json();
+        if (!res.ok) throw new Error(resData.error || 'Reset failed');
+        setActionMsg(`✅ Step-Up Authorized: ${resData.message}`);
+      } else if (pendingAction.type === 'revoke_device') {
+        const { deviceId } = pendingAction.payload;
+        const res = await fetch('/api/auth/trusted-devices/revoke', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ device_id: deviceId })
+        });
+        const resData = await res.json();
+        if (!res.ok) throw new Error(resData.error || 'Device trust revocation failed');
+        setActionMsg(`✅ Step-Up Authorized: Device ${deviceId} trust revoked.`);
+      }
+
+      setStepUpModalOpen(false);
+      setPendingAction(null);
       fetchSOCData();
     } catch (err) {
-      setActionMsg(`❌ ${err.message}`);
+      setStepUpError(err.message);
+    } finally {
+      setStepUpLoading(false);
     }
   };
 
-  const handleTerminateSession = async (sessionId, username) => {
-    setActionMsg('');
-    try {
-      const res = await fetch(`/api/admin/sessions/${sessionId}/terminate`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || 'Session termination failed');
-      setActionMsg(`✅ Session for ${username} terminated.`);
-      fetchSOCData();
-    } catch (err) {
-      setActionMsg(`❌ ${err.message}`);
-    }
+  const handleResetSystem = () => {
+    triggerStepUp({
+      type: 'reset_system',
+      payload: {},
+      title: 'Reset live data baseline'
+    });
   };
 
-  const handleResetSystem = async () => {
-    if (!window.confirm('Reset all live user sessions, incidents, and activity logs to clean baseline?')) return;
+  const handleSimulateUSB = async () => {
     setActionMsg('');
     try {
-      const res = await fetch('/api/admin/reset-system', {
+      const res = await fetch('/api/admin/usb/test-trigger', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          device_name: 'SanDisk Ultra USB 3.0 (64GB)',
+          drive_letter: 'E:'
+        })
       });
       const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || 'Reset failed');
-      setActionMsg(`✅ ${resData.message}`);
+      if (!res.ok) throw new Error(resData.error || 'Test alert failed');
+      setActionMsg(`🔌 ${resData.message}`);
       fetchSOCData();
     } catch (err) {
       setActionMsg(`❌ ${err.message}`);
@@ -132,6 +212,11 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const normalCount = employees.filter(e => (e.threat_classification || 'Normal') === 'Normal').length;
   const suspiciousCount = employees.filter(e => (e.threat_classification || 'Normal') === 'Suspicious').length;
   const maliciousCount = employees.filter(e => (e.threat_classification || 'Normal') === 'Malicious').length;
+
+  const usbAlerts = notifications.filter(n => 
+    (n.subject && (n.subject.toUpperCase().includes('USB') || n.subject.toUpperCase().includes('PENDRIVE'))) ||
+    (n.message && (n.message.toUpperCase().includes('USB') || n.message.toUpperCase().includes('PENDRIVE')))
+  );
 
   const expFormatted = stats.financial_exposure >= 10000000 
     ? `₹${(stats.financial_exposure / 10000000).toFixed(2)} Cr`
@@ -282,20 +367,94 @@ export default function AdminDashboard({ token, user, onLogout }) {
           <button className={`zt-btn ${activeTab === 'devices' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('devices')}>
             <Laptop size={15} /> Device Trust Verification
           </button>
+          <button className={`zt-btn ${activeTab === 'mfa_events' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('mfa_events')}>
+            <Shield size={15} /> Adaptive MFA & Auth Events ({mfaEvents.length})
+          </button>
         </div>
 
-        <button className="zt-btn" style={{ background: '#ef4444', fontSize: '0.78rem' }} onClick={handleResetSystem}>
-          🔄 Reset Live Data Baseline
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            className="zt-btn" 
+            style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.78rem', color: '#fff', border: '1px solid #f59e0b' }} 
+            onClick={handleSimulateUSB}
+            title="Instant presentation demo: Triggers SOC audio chime, floating red toast, and critical USB breach alert"
+          >
+            🔌 Test USB Alert
+          </button>
+          <button className="zt-btn" style={{ background: '#ef4444', fontSize: '0.78rem' }} onClick={handleResetSystem}>
+            🔄 Reset Live Data Baseline
+          </button>
+        </div>
       </div>
 
-      {activeTab === 'overview' && (
-        <div className="grid-2col">
-          {/* Main Column */}
-          <div>
-            <div className="zt-section-title">
-              <AlertTriangle size={18} color="#ef4444" /> Active Real-Time Threat Alerts & Insider Classification
+      {/* Real-Time USB / Pendrive / Smartphone Endpoint Insertion Alert Banner (Visible Across All Tabs) */}
+      {usbAlerts.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.25) 0%, rgba(236, 72, 153, 0.16) 100%)',
+          border: '1.5px solid #ef4444',
+          borderRadius: '10px',
+          padding: '1rem 1.25rem',
+          marginBottom: '1.25rem',
+          boxShadow: '0 0 25px rgba(239, 68, 68, 0.38)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{
+              background: '#ef4444',
+              color: '#fff',
+              borderRadius: '50%',
+              width: '42px',
+              height: '42px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.3rem',
+              flexShrink: 0,
+              boxShadow: '0 0 12px rgba(239, 68, 68, 0.8)'
+            }}>
+              🔌
             </div>
+            <div>
+              <div style={{ color: '#ef4444', fontWeight: '800', fontSize: '0.95rem', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>🚨 IMMEDIATE CRITICAL ALERT: USB / PENDRIVE INSERTION DETECTED</span>
+                <span className="zt-badge bc" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>CRITICAL ENDPOINT</span>
+              </div>
+              <div style={{ color: '#fee2e2', fontSize: '0.84rem', marginTop: '3px', fontWeight: '500' }}>
+                {usbAlerts[0].message}
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: '0.74rem', marginTop: '4px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                <span>Target: <strong style={{ color: '#f8fafc' }}>{usbAlerts[0].username}</strong></span>
+                <span>Channel: <strong style={{ color: '#38bdf8' }}>{usbAlerts[0].channel}</strong></span>
+                <span>Reported: <strong style={{ color: '#cbd5e1' }}>{new Date(usbAlerts[0].sent_at).toLocaleTimeString()}</strong></span>
+                <span>Status: <strong style={{ color: '#22c55e' }}>{usbAlerts[0].status}</strong></span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            <button 
+              className="zt-btn" 
+              style={{ background: '#ef4444', color: '#fff', fontSize: '0.8rem', padding: '0.5rem 1rem', fontWeight: 'bold' }}
+              onClick={() => setActiveTab('notifications')}
+            >
+              <PhoneCall size={14} /> View Dispatches ({usbAlerts.length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'overview' && (
+        <>
+
+          <div className="grid-2col">
+            {/* Main Column */}
+            <div>
+              <div className="zt-section-title">
+                <AlertTriangle size={18} color="#ef4444" /> Active Real-Time Threat Alerts & Insider Classification
+              </div>
             <div className="zt-card">
               {active_alerts.length === 0 ? (
                 <div style={{ color: '#22c55e', padding: '1rem', textAlign: 'center', fontWeight: 'bold' }}>
@@ -435,7 +594,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
             </div>
           </div>
         </div>
-      )}
+      </>
+    )}
 
       {activeTab === 'sessions' && (
         <div>
@@ -454,6 +614,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                     <th>Browser</th>
                     <th>Location & IP</th>
                     <th>Login Time</th>
+                    <th>MFA Status</th>
                     <th>Risk Score</th>
                     <th>Status</th>
                     <th>SOC Action</th>
@@ -478,6 +639,16 @@ export default function AdminDashboard({ token, user, onLogout }) {
                         <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#f472b6' }}>{sess.ip_addr}</div>
                       </td>
                       <td style={{ fontSize: '0.75rem', color: '#fbbf24' }}>{sess.login_time ? sess.login_time.replace('T', ' ').substring(0, 16) : '09:00'}</td>
+                      <td>
+                        <span className={`zt-badge ${sess.mfa_verified ? 'bl' : 'bm'}`} style={{ fontSize: '0.68rem' }}>
+                          {sess.mfa_verified ? '✓ Step-Up Verified' : 'Standard Trust'}
+                        </span>
+                        {sess.step_up_verified_at && (
+                          <div style={{ fontSize: '0.66rem', color: '#10b981', marginTop: '2px' }}>
+                            Step-Up Active
+                          </div>
+                        )}
+                      </td>
                       <td style={{ fontWeight: 'bold', color: sess.risk_score >= 80 ? '#ef4444' : sess.risk_score >= 30 ? '#f59e0b' : '#10b981' }}>
                         {sess.risk_score}/100
                       </td>
@@ -491,7 +662,11 @@ export default function AdminDashboard({ token, user, onLogout }) {
                           <button 
                             className="zt-btn" 
                             style={{ background: '#ef4444', padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
-                            onClick={() => handleTerminateSession(sess.id, sess.username)}
+                            onClick={() => triggerStepUp({
+                              type: 'terminate_session',
+                              payload: { sessionId: sess.id, username: sess.username },
+                              title: `Terminate session for ${sess.username}`
+                            })}
                           >
                             Terminate Session
                           </button>
@@ -554,7 +729,11 @@ export default function AdminDashboard({ token, user, onLogout }) {
                           <button 
                             className="zt-btn" 
                             style={{ background: isLocked ? '#10b981' : '#ef4444', padding: '0.25rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            onClick={() => handleToggleLock(emp.id, emp.name)}
+                            onClick={() => triggerStepUp({
+                              type: 'toggle_lock',
+                              payload: { userId: emp.id, employeeName: emp.name },
+                              title: `${isLocked ? 'Unlock' : 'Lock'} account for ${emp.name}`
+                            })}
                           >
                             {isLocked ? <Unlock size={12} /> : <Lock size={12} />}
                             {isLocked ? 'Unlock Account' : 'Lock Account'}
@@ -592,9 +771,23 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 <tbody>
                   {notifications.map((notif, idx) => (
                     <tr key={idx}>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>{notif.sent_at.replace('T', ' ').substring(0, 16)}</td>
-                      <td style={{ fontWeight: 'bold', color: notif.channel === 'SMS' ? '#f59e0b' : '#3b82f6' }}>
-                        {notif.channel === 'SMS' ? '📱 SMS' : '📧 Email'}
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>
+                        {(() => {
+                          try {
+                            let str = String(notif.sent_at || '').trim();
+                            if (str.includes('T') && !str.endsWith('Z') && !/[+-]\d{2}(:\d{2})?$/.test(str)) str += 'Z';
+                            const d = new Date(str);
+                            return isNaN(d.getTime()) ? (notif.sent_at || '—') : d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                          } catch {
+                            return notif.sent_at || '—';
+                          }
+                        })()}
+                      </td>
+                      <td style={{ 
+                        fontWeight: 'bold', 
+                        color: (notif.channel || '').includes('USB') ? '#ec4899' : notif.channel === 'SMS' ? '#f59e0b' : '#3b82f6' 
+                      }}>
+                        {(notif.channel || '').includes('USB') ? '🔌 Endpoint USB' : notif.channel === 'SMS' ? '📱 SMS' : '📧 Email'}
                       </td>
                       <td style={{ fontFamily: 'monospace' }}>{notif.recipient}</td>
                       <td style={{ fontWeight: 'bold' }}>{notif.subject}</td>
@@ -658,6 +851,316 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'mfa_events' && (
+        <div>
+          <div className="zt-section-title">
+            <Shield size={18} /> Zero Trust Adaptive MFA & Authentication Audit Trail
+          </div>
+          <div className="zt-card" style={{ marginBottom: '1.5rem' }}>
+            <div className="zt-table-container">
+              <table className="zt-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Employee & Role</th>
+                    <th>Department</th>
+                    <th>Event Type</th>
+                    <th>IP Address</th>
+                    <th>Endpoint / Context</th>
+                    <th>Audit Details</th>
+                    <th>Risk Posture</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mfaEvents.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8' }}>
+                        No authentication or MFA events recorded yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    mfaEvents.map((evt, idx) => {
+                      const isChallenge = (evt.event_type || '').includes('Challenge');
+                      const isSuccess = (evt.event_type || '').includes('Verified') || (evt.event_type || '').includes('Success');
+                      const isRevoke = (evt.event_type || '').includes('Revoked');
+                      return (
+                        <tr key={idx}>
+                          <td style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>
+                            {evt.timestamp ? evt.timestamp.replace('T', ' ').substring(0, 19) : '—'}
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 'bold' }}>{evt.user_name || evt.username}</div>
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{evt.username}</div>
+                          </td>
+                          <td>{evt.department || '—'}</td>
+                          <td>
+                            <span className={`zt-badge ${isSuccess ? 'bl' : isChallenge ? 'bm' : isRevoke ? 'bc' : 'bl'}`}>
+                              {evt.event_type}
+                            </span>
+                          </td>
+                          <td style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#00f5ff' }}>
+                            {evt.ip_addr || '127.0.0.1'}
+                          </td>
+                          <td style={{ fontSize: '0.75rem', color: '#a7f3d0' }}>
+                            {evt.device || 'Workstation'}
+                          </td>
+                          <td style={{ fontSize: '0.78rem', color: '#e2e8f0', maxWidth: '300px' }}>
+                            {evt.details}
+                          </td>
+                          <td>
+                            <span className={`zt-badge ${evt.is_suspicious ? 'bc' : 'bl'}`}>
+                              {evt.is_suspicious ? 'Flagged Risk' : 'Authorized'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="zt-section-title">
+            <Laptop size={18} /> Registered Endpoints & Device Trust Authority
+          </div>
+          <div className="zt-card">
+            <div className="zt-table-container">
+              <table className="zt-table">
+                <thead>
+                  <tr>
+                    <th>Device Hardware / Name</th>
+                    <th>Assigned User</th>
+                    <th>Device ID</th>
+                    <th>OS & Browser</th>
+                    <th>Known IP</th>
+                    <th>Trust Level</th>
+                    <th>Last Verified</th>
+                    <th>SOC Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trustedDevices.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8' }}>
+                        No enrolled devices found.
+                      </td>
+                    </tr>
+                  ) : (
+                    trustedDevices.map((td, idx) => (
+                      <tr key={idx}>
+                        <td>
+                          <div style={{ fontWeight: 'bold', color: '#f8fafc' }}>{td.device_name || 'Enrolled Device'}</div>
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>First enrolled: {td.first_seen_at ? td.first_seen_at.substring(0, 10) : 'Baseline'}</div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 'bold' }}>{td.name || td.username}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{td.username}</div>
+                        </td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#a7f3d0' }}>{td.device_id}</td>
+                        <td>
+                          <div style={{ fontSize: '0.76rem', color: '#e2e8f0' }}>{td.os}</div>
+                          <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{td.browser}</div>
+                        </td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#00f5ff' }}>{td.ip_address}</td>
+                        <td>
+                          <span className={`zt-badge ${td.is_trusted ? 'bl' : 'bc'}`}>
+                            {td.is_trusted ? '✓ Trusted Endpoint' : 'Untrusted Device'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '0.75rem', color: '#fbbf24' }}>
+                          {td.last_seen_at ? td.last_seen_at.replace('T', ' ').substring(0, 16) : 'Recently'}
+                        </td>
+                        <td>
+                          {td.is_trusted ? (
+                            <button
+                              className="zt-btn"
+                              style={{ background: '#ef4444', padding: '0.25rem 0.6rem', fontSize: '0.72rem' }}
+                              onClick={() => triggerStepUp({
+                                type: 'revoke_device',
+                                payload: { deviceId: td.device_id },
+                                title: `Revoke Trust for Device ${td.device_id}`
+                              })}
+                            >
+                              Revoke Trust
+                            </button>
+                          ) : (
+                            <span style={{ color: '#ef4444', fontSize: '0.72rem', fontWeight: 'bold' }}>Trust Revoked</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step-Up MFA Authorization Modal */}
+      {stepUpModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(3, 7, 18, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #0b1329 0%, #060c1d 100%)',
+            border: '1.5px solid #00f5ff',
+            boxShadow: '0 0 40px rgba(0, 245, 255, 0.25)',
+            borderRadius: '16px',
+            maxWidth: '460px',
+            width: '100%',
+            padding: '2rem',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '0.8rem' }}>
+              <div style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ef4444'
+              }}>
+                <Shield size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#f8fafc' }}>
+                  Zero Trust Step-Up MFA Required
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                  High-Privilege SOC Administrative Authorization
+                </div>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: '8px',
+              padding: '0.85rem',
+              marginBottom: '1.25rem',
+              fontSize: '0.82rem',
+              color: '#fecaca',
+              lineHeight: '1.4'
+            }}>
+              <strong>Action:</strong> {pendingAction?.title}
+              <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#94a3b8' }}>
+                Zero Trust Continuous Evaluation enforces real-time re-authentication before sensitive administrative interventions.
+              </div>
+            </div>
+
+            {stepUpError && (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.18)',
+                border: '1px solid #ef4444',
+                color: '#fca5a5',
+                borderRadius: '8px',
+                padding: '0.65rem 0.85rem',
+                fontSize: '0.8rem',
+                marginBottom: '1rem'
+              }}>
+                ⚠️ {stepUpError}
+              </div>
+            )}
+
+            <form onSubmit={handleStepUpVerifyAndExecute}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.4rem', fontWeight: '500' }}>
+                  Enter 6-Digit Step-Up OTP Code:
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={stepUpOtp}
+                  onChange={(e) => setStepUpOtp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="000000"
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '0.85rem',
+                    textAlign: 'center',
+                    letterSpacing: '0.5em',
+                    fontSize: '1.4rem',
+                    fontWeight: 'bold',
+                    fontFamily: 'monospace',
+                    color: '#00f5ff',
+                    background: 'rgba(15, 23, 42, 0.9)',
+                    border: '1.5px solid rgba(0, 245, 255, 0.4)',
+                    borderRadius: '10px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div style={{
+                background: 'rgba(0, 245, 255, 0.06)',
+                border: '1px dashed rgba(0, 245, 255, 0.3)',
+                borderRadius: '8px',
+                padding: '0.5rem 0.75rem',
+                fontSize: '0.75rem',
+                color: '#38bdf8',
+                marginBottom: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <span>Demo SOC Code: <strong>Any 6 digits (e.g. 774921)</strong></span>
+                <button
+                  type="button"
+                  onClick={() => setStepUpOtp('774921')}
+                  style={{
+                    background: 'rgba(0, 245, 255, 0.15)',
+                    border: '1px solid rgba(0, 245, 255, 0.4)',
+                    color: '#00f5ff',
+                    borderRadius: '4px',
+                    padding: '2px 8px',
+                    fontSize: '0.7rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Auto-fill
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="zt-btn zt-btn-sec"
+                  onClick={() => { setStepUpModalOpen(false); setPendingAction(null); }}
+                  disabled={stepUpLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="zt-btn"
+                  style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: '#fff', border: '1px solid #ef4444' }}
+                  disabled={stepUpLoading || stepUpOtp.length !== 6}
+                >
+                  {stepUpLoading ? 'Verifying OTP...' : 'Verify & Authorize'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -15,3 +15,11 @@ frontend/dist/
 
 # Local logs
 *.log
+
+# Secrets & Environment variables (never push secrets to git)
+.env
+*.env
+backend/.env
+frontend/.env
+!.env.example
+!*.env.example

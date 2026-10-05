@@ -130,7 +130,7 @@ export default function GlobalHeader({
           </button>
 
           {/* Notification Center */}
-          {token && <NotificationCenter token={token} />}
+          {token && <NotificationCenter token={token} theme={theme} />}
 
           {/* User Profile Pill & Quick Logout */}
           {user && (

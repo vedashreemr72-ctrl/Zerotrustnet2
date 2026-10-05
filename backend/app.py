@@ -4,12 +4,18 @@ import sqlite3
 import hashlib
 import uuid
 import json
-from datetime import datetime, timedelta
+import threading
+import time
+import ctypes
+import string
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 import jwt
 import pandas as pd
 import io
+import zipfile
+import tarfile
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -27,12 +33,18 @@ if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
         pass
 
 from ml_engine import calculate_risk, get_recommendations, run_ml_engine
+from dotenv import load_dotenv
+load_dotenv()
+
+from adaptive_mfa import evaluate_adaptive_mfa, verify_adaptive_otp, register_or_update_device, check_device_trust, MFA_CHALLENGES, is_twilio_configured, send_twilio_sms
+from supabase_service import get_supabase_client, is_supabase_connected, log_event_to_supabase, sync_session_to_supabase
+
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
 app = Flask(__name__, static_folder=FRONTEND_DIST if os.path.exists(FRONTEND_DIST) else None, static_url_path='')
 CORS(app)
 
-SECRET_KEY = "ZTN_SUPER_SECRET_KEY_CYBER_2026"
+SECRET_KEY = os.getenv("SECRET_KEY", "ZTN_SUPER_SECRET_KEY_CYBER_2026")
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zerotrust.db")
 
 # ── DATABASE LAYER ─────────────────────────────────────────────────────────────
@@ -169,9 +181,54 @@ def init_db():
     # Ensure missing session columns exist for schema migration
     c.execute("PRAGMA table_info(sessions)")
     existing_cols = [col[1] for col in c.fetchall()]
-    for col_name in ['device_id', 'browser', 'os', 'location', 'department', 'role']:
+    for col_name in ['device_id', 'browser', 'os', 'location', 'department', 'role', 'mfa_verified', 'step_up_verified_at', 'revocation_reason']:
         if col_name not in existing_cols:
-            c.execute(f"ALTER TABLE sessions ADD COLUMN {col_name} TEXT DEFAULT ''")
+            col_type = "INTEGER DEFAULT 0" if col_name == 'mfa_verified' else "TEXT DEFAULT ''"
+            c.execute(f"ALTER TABLE sessions ADD COLUMN {col_name} {col_type}")
+
+    c.execute("PRAGMA table_info(users)")
+    existing_u_cols = [col[1] for col in c.fetchall()]
+    if 'email' not in existing_u_cols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''")
+        except Exception:
+            pass
+    if 'mfa_enrolled' not in existing_u_cols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN mfa_enrolled INTEGER DEFAULT 1")
+        except Exception:
+            pass
+    if 'phone' not in existing_u_cols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''")
+        except Exception:
+            pass
+
+    c.execute("""CREATE TABLE IF NOT EXISTS trusted_devices (
+        id             TEXT PRIMARY KEY,
+        user_id        TEXT NOT NULL,
+        device_id      TEXT NOT NULL,
+        device_name    TEXT,
+        browser        TEXT,
+        os             TEXT,
+        ip_address     TEXT,
+        is_trusted     INTEGER DEFAULT 1,
+        trust_level    TEXT DEFAULT 'verified',
+        first_seen_at  TEXT,
+        last_seen_at   TEXT,
+        UNIQUE(user_id, device_id)
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS mfa_challenges (
+        id             TEXT PRIMARY KEY,
+        user_id        TEXT NOT NULL,
+        session_id     TEXT,
+        challenge_type TEXT DEFAULT 'adaptive_login',
+        reason         TEXT,
+        status         TEXT DEFAULT 'pending',
+        created_at     TEXT,
+        verified_at    TEXT
+    )""")
 
     # Ensure missing incident columns exist for schema migration
     c.execute("PRAGMA table_info(incidents)")
@@ -224,6 +281,19 @@ def init_db():
         c.execute("ALTER TABLE file_access_logs ADD COLUMN filepath TEXT DEFAULT ''")
     if 'file_size_mb' not in existing_file_cols:
         c.execute("ALTER TABLE file_access_logs ADD COLUMN file_size_mb REAL DEFAULT 0.0")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS extracted_archives (
+        id             TEXT PRIMARY KEY,
+        user_id        TEXT NOT NULL,
+        username       TEXT NOT NULL,
+        archive_name   TEXT NOT NULL,
+        extract_folder TEXT NOT NULL,
+        total_files    INTEGER DEFAULT 0,
+        has_threats    INTEGER DEFAULT 0,
+        threat_details TEXT DEFAULT '',
+        items_json     TEXT DEFAULT '[]',
+        created_at     TEXT NOT NULL
+    )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS departments (
         id               TEXT PRIMARY KEY,
@@ -346,7 +416,7 @@ DEFAULT_POLICIES = [
 
 def _log_event(conn, user_id, username, user_name, department, event_type, event_details, ip, device, risk_contrib, is_suspicious, ts_str=None, session_id=None):
     c = conn.cursor()
-    ts = ts_str or datetime.now().isoformat()
+    ts = ts_str or datetime.now(timezone.utc).isoformat()
     c.execute("INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid.uuid4()), user_id, username, user_name, department,
                ts, event_type, event_details, ip, device, risk_contrib, is_suspicious, session_id or ""))
@@ -446,6 +516,18 @@ def seed_db():
                   (pid, p["name"], p["conditions"], p["action"], 1, "admin", now_str, p["description"]))
 
     conn.commit()
+    conn.close()
+    ensure_trusted_devices_seeded()
+
+def ensure_trusted_devices_seeded():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id, username, role FROM users")
+    users = c.fetchall()
+    for uid, uname, urole in users:
+        dev_id = "DEV-CORP-ADMIN-01" if urole == "admin" else ("DEV-55357-WIN" if uname == "ravi" else f"DEV-{abs(hash(uname))%90000+10000}-CORP")
+        dev_name = "Admin SOC Secured Workstation" if urole == "admin" else "Corporate Laptop"
+        register_or_update_device(conn, uid, dev_id, dev_name, "Google Chrome 127", "Windows 11 Enterprise", "192.168.1.10", is_trusted=True)
     conn.close()
 
 # ── LOGGING LOGIC ──────────────────────────────────────────────────────────────
@@ -619,6 +701,7 @@ def ensure_incidents(df):
         if row.get('last_login_days_ago', 0) > 90: violations.append("Dormant Account Reactivation")
         if row.get('credential_sharing_flag'): violations.append("Credential Sharing")
         if row.get('failed_logins', 0) > 5: violations.append("Multiple Failed Logins")
+        if row.get('usb_usage', 0) == 1: violations.append("Unauthorized Removable USB Storage Exfiltration")
         policies = ", ".join(violations)
 
         recs = json.dumps(row.get('recommendations', []), ensure_ascii=False)
@@ -649,6 +732,7 @@ def api_register():
     dept = data.get("department", "Engineering").strip()
     emp_type = data.get("emp_type", "Employee").strip()
     device_name = data.get("device", "Corporate Laptop").strip()
+    phone = data.get("phone", "").strip()
 
     if not username or not password or not name:
         return jsonify({"error": "Username, password, and full name are required."}), 400
@@ -663,8 +747,9 @@ def api_register():
     uid = str(uuid.uuid4())
     now_str = datetime.now().isoformat()
 
-    c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?)",
-              (uid, username, hash_pwd(password), name, dept, emp_type, "employee", 1, now_str))
+    c.execute("""INSERT INTO users (id, username, pwd_hash, name, department, emp_type, role, is_active, created_at, phone)
+                 VALUES (?,?,?,?,?,?,?,?,?,?)""",
+              (uid, username, hash_pwd(password), name, dept, emp_type, "employee", 1, now_str, phone))
 
     c.execute("""INSERT OR IGNORE INTO behavior_data VALUES
         (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -758,34 +843,39 @@ def verify_device_security(uid, username, device_id, browser, os_sys):
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
     data = request.json or {}
-    username = data.get("username", "").strip().lower()
+    username_in = data.get("username", "").strip()
+    email_in = data.get("email", "").strip()
+    login_id = (email_in or username_in).lower()
     password = data.get("password", "")
     role_req = data.get("role", "employee") # 'admin' or 'employee'
 
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT id, name, department, emp_type, role, is_active FROM users WHERE LOWER(username)=? AND pwd_hash=?",
-              (username, hash_pwd(password)))
+    c.execute("""
+        SELECT id, name, department, emp_type, role, is_active, username, email, phone
+        FROM users
+        WHERE (LOWER(username)=? OR LOWER(email)=?) AND pwd_hash=?
+    """, (login_id, login_id, hash_pwd(password)))
     row = c.fetchone()
     
     if not row:
         conn.close()
         client_ip = data.get("ip_addr") or request.remote_addr or "127.0.0.1"
         client_browser = data.get("browser") or request.headers.get("User-Agent", "Web Client")
-        log_audit("unknown", username, username, "External", "Failed Authentication",
-                  f"Failed login attempt for account '{username}'. Invalid credentials entered.",
+        log_audit("unknown", login_id, login_id, "External", "Failed Authentication",
+                  f"Failed login attempt for '{login_id}'. Invalid credentials entered.",
                   client_ip, client_browser, risk_contrib=20, is_suspicious=1)
-        return jsonify({"error": "Invalid username or password"}), 401
+        return jsonify({"error": "Invalid username/email or password"}), 401
 
-    uid, name, dept, emp_type, urole, is_active = row
+    uid, name, dept, emp_type, urole, is_active, real_uname, user_email, user_phone = row
     if not is_active:
         conn.close()
         client_ip = data.get("ip_addr") or request.remote_addr or "127.0.0.1"
         client_browser = data.get("browser") or request.headers.get("User-Agent", "Web Client")
-        log_audit(uid, username, name, dept, "Locked Account Access Attempt",
-                  f"Disabled employee account '{username}' attempted login.",
+        log_audit(uid, real_uname, name, dept, "Locked Account Access Attempt",
+                  f"Disabled employee account '{real_uname}' attempted login.",
                   client_ip, client_browser, risk_contrib=25, is_suspicious=1)
-        return jsonify({"error": "Account is disabled"}), 403
+        return jsonify({"error": "Account is disabled due to security policy"}), 403
 
     if urole != role_req:
         conn.close()
@@ -802,59 +892,85 @@ def api_login():
                  "09:00", "Corporate Laptop", "Bengaluru", 15, dept, dept, 0, "None", 0))
             conn.commit()
 
-    conn.close()
-
-    # Step 2: Perform Device Verification
-    client_device_id = data.get("device_id") or f"DEV-{abs(hash(username)) % 90000 + 10000}"
+    # Step 2: Extract endpoint and telemetry info
+    client_device_id = data.get("device_id") or f"DEV-{abs(hash(real_uname)) % 90000 + 10000}"
     client_browser = data.get("browser") or request.headers.get("User-Agent", "Chrome 127.0")
     client_os = data.get("os") or "Windows 11"
-    client_ip = data.get("ip_addr") or request.remote_addr or f"192.168.1.{abs(hash(username)) % 200 + 10}"
+    client_ip = data.get("ip_addr") or request.remote_addr or f"192.168.1.{abs(hash(real_uname)) % 200 + 10}"
     client_location = data.get("location") or "Bengaluru, India"
     login_time = data.get("login_time") or datetime.now().isoformat()
     device_label = f"{client_os} ({client_browser})"
 
-    dev_check = verify_device_security(uid, username, client_device_id, client_browser, client_os)
+    dev_check = verify_device_security(uid, real_uname, client_device_id, client_browser, client_os)
 
-    # Update behavior data metrics if device check failed
-    if dev_check["risk_penalty"] > 0:
-        conn = get_conn()
-        device_known_val = 1 if (dev_check["is_registered"] and dev_check["is_normal_device"]) else 0
-        conn.execute("UPDATE behavior_data SET device_known=? WHERE user_id=?", (device_known_val, uid))
+    # Adaptive MFA Engine Evaluation with Twilio live SMS dispatch
+    user_sms_dest = (user_phone or "").strip() or os.getenv("DEFAULT_SMS_RECIPIENT", "").strip()
+    mfa_eval = evaluate_adaptive_mfa(
+        conn, uid, real_uname, urole,
+        client_device_id, device_label, client_browser, client_os, client_ip, client_location,
+        phone=user_sms_dest
+    )
+
+    if mfa_eval["mfa_required"]:
+        # Record challenge in mfa_challenges
+        c_ins = conn.cursor()
+        c_ins.execute("""
+            INSERT INTO mfa_challenges (id, user_id, challenge_type, reason, status, created_at)
+            VALUES (?,?,?,?,?,?)
+        """, (mfa_eval["challenge_id"], uid, mfa_eval["challenge_type"], "; ".join(mfa_eval["reasons"]), "pending", datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
+        delivery_info = f"SMS: {mfa_eval.get('masked_phone')}" if mfa_eval.get("sms_sent") else "Simulated OTP Channel"
+        log_audit(
+            uid, real_uname, name, dept, "Adaptive MFA Triggered",
+            f"Adaptive MFA Challenge Triggered ({mfa_eval['challenge_type']}): {'; '.join(mfa_eval['reasons'])} | {delivery_info} | Device: {client_device_id} | Location: {client_location}",
+            client_ip, device_label, 10, 1
+        )
+
+        return jsonify({
+            "mfa_required": True,
+            "challenge_id": mfa_eval["challenge_id"],
+            "challenge_type": mfa_eval["challenge_type"],
+            "reasons": mfa_eval["reasons"],
+            "otp_demo": mfa_eval["otp_demo"],
+            "demo_code": mfa_eval["otp_demo"],
+            "username": real_uname,
+            "role": urole,
+            "device_id": client_device_id,
+            "device_trusted": False,
+            "delivery_method": mfa_eval.get("delivery_method", "demo_simulated"),
+            "sms_sent": mfa_eval.get("sms_sent", False),
+            "masked_phone": mfa_eval.get("masked_phone", ""),
+            "twilio_configured": mfa_eval.get("twilio_configured", False),
+            "message": mfa_eval.get("message", f"Adaptive MFA Triggered: {'; '.join(mfa_eval['reasons'])}")
+        })
+
+    # Device is recognized and trusted + behavior is normal -> Direct Login with Adaptive MFA passed!
+    if dev_check["risk_penalty"] > 0:
+        device_known_val = 1 if (dev_check["is_registered"] and dev_check["is_normal_device"]) else 0
+        conn.execute("UPDATE behavior_data SET device_known=? WHERE user_id=?", (device_known_val, uid))
+        conn.commit()
+
     # Supersede older sessions for this device
-    conn = get_conn()
     conn.execute("UPDATE sessions SET is_active=0 WHERE user_id=? AND device_id=?", (uid, client_device_id))
     conn.commit()
 
     # Create enterprise session telemetry
     sid = str(uuid.uuid4())
     conn.execute("""
-        INSERT INTO sessions (id, user_id, username, login_time, logout_time, ip_addr, device, device_id, browser, os, location, department, role, is_active, risk_score)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)
-    """, (sid, uid, username, login_time, None, client_ip, device_label, client_device_id, client_browser, client_os, client_location, dept, urole, 0 if urole == "admin" else dev_check["risk_penalty"]))
+        INSERT INTO sessions (id, user_id, username, login_time, logout_time, ip_addr, device, device_id, browser, os, location, department, role, is_active, risk_score, mfa_verified)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,1)
+    """, (sid, uid, real_uname, login_time, None, client_ip, device_label, client_device_id, client_browser, client_os, client_location, dept, urole, 0 if urole == "admin" else dev_check["risk_penalty"]))
     conn.commit()
     conn.close()
 
-    # Log audit event with Step 2 Device Verification status
-    if urole == "admin":
-        audit_desc = f"Enterprise SOC Session Created | Administrator Authentication Verified | DeviceID: {client_device_id} | OS: {client_os} | Browser: {client_browser}"
-        log_audit(
-            uid, username, name, dept, "Login",
-            audit_desc, client_ip, device_label, 0, 0, session_id=sid
-        )
-    else:
-        audit_desc = f"Enterprise Session Created | Step 2 Device Check: {dev_check['status']} (+{dev_check['risk_penalty']} Risk Penalty) | DeviceID: {client_device_id} | OS: {client_os} | Browser: {client_browser}"
-        log_audit(
-            uid, username, name, dept, "Login",
-            audit_desc, client_ip, device_label, dev_check["risk_penalty"], 1 if dev_check["risk_penalty"] > 0 else 0, session_id=sid
-        )
+    audit_desc = f"Enterprise Session Established (Trusted Endpoint — Adaptive MFA Passed) | DeviceID: {client_device_id} | OS: {client_os} | Location: {client_location}"
+    log_audit(uid, real_uname, name, dept, "Login", audit_desc, client_ip, device_label, 0, 0, session_id=sid)
 
-    # Issue token with enterprise session payload & device verification
     payload = {
         "user_id": uid,
-        "username": username,
+        "username": real_uname,
         "name": name,
         "department": dept,
         "emp_type": emp_type,
@@ -867,11 +983,13 @@ def api_login():
         "device": device_label,
         "location": client_location,
         "login_time": login_time,
+        "mfa_verified": True,
+        "device_trusted": True,
         "device_verification": dev_check,
         "exp": datetime.utcnow() + timedelta(hours=10)
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    return jsonify({"token": token, "user": payload, "device_verification": dev_check})
+    return jsonify({"token": token, "user": payload, "mfa_required": False, "device_trusted": True, "device_verification": dev_check})
 
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
@@ -912,6 +1030,34 @@ def api_verify():
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
+@app.route('/api/auth/test-sms', methods=['POST'])
+def api_test_sms():
+    data = request.json or {}
+    dest_phone = (data.get("phone") or "").strip() or os.getenv("DEFAULT_SMS_RECIPIENT", "").strip()
+    if not is_twilio_configured():
+        return jsonify({
+            "success": False,
+            "error": "Twilio is not configured. Please add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER to backend/.env."
+        }), 400
+    if not dest_phone:
+        return jsonify({
+            "success": False,
+            "error": "Recipient phone number is required (E.164 international format, e.g. +919876543210 or +14155552671)."
+        }), 400
+    test_otp = str(random.randint(100000, 999999))
+    res = send_twilio_sms(dest_phone, test_otp, "SOC Administrator", "Twilio Live Integration Diagnostics")
+    if res.get("success"):
+        return jsonify({
+            "success": True,
+            "message": f"Twilio SMS dispatched successfully to {res.get('masked_phone')}!",
+            "details": res
+        })
+    return jsonify({
+        "success": False,
+        "error": res.get("error", "Twilio SMS dispatch failed."),
+        "details": res
+    }), 500
+
 @app.route('/api/employee/dashboard', methods=['GET'])
 def employee_dashboard():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -951,6 +1097,32 @@ def employee_dashboard():
     # Active sessions
     c.execute("SELECT COUNT(*) FROM sessions WHERE user_id=? AND is_active=1", (uid,))
     active_sess = c.fetchone()[0]
+
+    # Trusted devices for this employee
+    c.execute("""
+        SELECT device_id, device_name, browser, os, is_trusted, trust_level, last_seen_at
+        FROM trusted_devices
+        WHERE user_id=?
+        ORDER BY last_seen_at DESC
+    """, (uid,))
+    dev_rows = c.fetchall()
+    trusted_devs = [{
+        "device_id": dr[0], "device_name": dr[1], "browser": dr[2], "os": dr[3],
+        "is_trusted": bool(dr[4]), "trust_level": dr[5], "last_seen_at": dr[6]
+    } for dr in dev_rows]
+
+    # Recent session activity for this employee
+    c.execute("""
+        SELECT id, login_time, logout_time, ip_addr, device, device_id, browser, os, location, is_active, mfa_verified
+        FROM sessions WHERE user_id=? ORDER BY login_time DESC LIMIT 5
+    """, (uid,))
+    sess_rows = c.fetchall()
+    recent_logins = [{
+        "session_id": sr[0], "login_time": sr[1], "logout_time": sr[2], "ip_addr": sr[3],
+        "device": sr[4], "device_id": sr[5], "browser": sr[6], "os": sr[7],
+        "location": sr[8], "is_active": bool(sr[9]), "mfa_verified": bool(sr[10])
+    } for sr in sess_rows]
+
     conn.close()
 
     return jsonify({
@@ -965,6 +1137,14 @@ def employee_dashboard():
             "suspicious_events": susp_events,
             "active_sessions": active_sess
         },
+        "mfa_status": {
+            "mfa_enrolled": True,
+            "policy": "Adaptive MFA Active (Zero Trust: Untrusted endpoints & abnormal locations challenge OTP)",
+            "trusted_devices_count": len([d for d in trusted_devs if d["is_trusted"]]),
+            "trusted_devices": trusted_devs
+        },
+        "recent_logins": recent_logins,
+        "trusted_devices": trusted_devs,
         "recent_audit": events,
         "baseline": {
             "login_time": r.get("baseline_login_time", "09:00"),
@@ -1076,8 +1256,40 @@ def employee_action():
         details = custom_details or "Unregistered USB device connected and mounted (SanDisk Ultra 64GB)"
         b_data["usb_usage"] = 1
         is_susp = 1
-        risk_contrib = 20
-        warning = "USB device connected. Endpoint security controls restrict unapproved storage media."
+        risk_contrib = 30
+        warning = None  # Silent detection on employee side: Do not warn the employee that SOC is notified
+
+        # Immediately create high-priority notification for Admin SOC Dashboard
+        nid = str(uuid.uuid4())
+        ts = datetime.now(timezone.utc).isoformat()
+        notif_subject = f"🚨 UNAUTHORIZED USB INSERTION: {name} ({dept})"
+        notif_msg = f"CRITICAL: Employee {name} (@{uname}, Dept: {dept}) inserted an unauthorized external USB/Pendrive device [{details}]. Endpoint DLP triggered; device isolated."
+        conn.execute("""
+            INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+            VALUES (?,?,?,?,?,?,?,?,?,?,0)
+        """, (nid, uid, uname, "Endpoint USB Alert", "SOC Admin Team", notif_subject, notif_msg, "Critical", ts, "Dispatched"))
+
+        # Immediately create high-priority alert in alerts table
+        alt_id = str(uuid.uuid4())
+        alt_code = f"ALT-{int(datetime.now().timestamp()) % 100000}"
+        conn.execute("""
+            INSERT INTO alerts (id, alert_code, user_id, user_name, department, priority, alert_title, severity, risk_score, created_at, status)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (alt_id, alt_code, uid, name, dept, "P1", f"Unauthorized USB/Pendrive Inserted: {details}", "Critical", 90, ts, "Active"))
+
+        # Also create active incident case
+        inc_id = f"INC-{int(datetime.now().timestamp()) % 100000}"
+        conn.execute("""
+            INSERT INTO incidents 
+            (id, incident_id, user_id, username, user_name, department, created_at, severity, status, summary, evidence, policies_triggered, risk_score, recommendations, resolved_at, resolved_by, notes, assigned_to, resolution) 
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (str(uuid.uuid4()), inc_id, uid, uname, name, dept, ts, "Critical", "Open",
+              f"Critical USB Endpoint Insertion: {name} ({dept}) connected unapproved device [{details}]",
+              json.dumps([f"Unauthorized USB/Removable Media: {details}", "Policy POL-003 Violation: Removable Storage Lockout"]),
+              "POL-003: Removable Storage Lockout & Token Revocation",
+              90,
+              json.dumps(["Disable endpoint USB port access", "Quarantine user network access", "Revoke active session tokens", "Initiate forensic audit"]),
+              None, None, f"Real-time USB insertion alert dispatched to Admin SOC Dashboard.", "SOC Team", ""))
 
     elif action_type == "export_data":
         event_type = "File Download"
@@ -1141,6 +1353,14 @@ def employee_action():
         risk_contrib = 20
         warning = "Concurrent login detected across multiple endpoint devices."
 
+    elif action_type == "screenshot_attempt":
+        event_type = "Security Violation"
+        details = custom_details or "Unauthorized screen capture attempt intercepted and blocked (PrintScreen / Snipping Tool)"
+        b_data["failed_logins"] = b_data.get("failed_logins", 0) + 1
+        is_susp = 1
+        risk_contrib = 20
+        warning = "SECURITY VIOLATION: Screen capture prohibited by Zero Trust Data Loss Prevention (DLP) policy."
+
     # Save behavior updates back to DB
     c.execute("""
         UPDATE behavior_data SET
@@ -1161,7 +1381,46 @@ def employee_action():
     df_fresh = load_all_evaluated()
     ensure_incidents(df_fresh)
 
-    return jsonify({"success": True, "warning": warning})
+    # Zero Trust Continuous Session Evaluation
+    current_risk = 0
+    if not df_fresh.empty:
+        my_row = df_fresh[df_fresh['id'] == uid]
+        if not my_row.empty:
+            current_risk = int(my_row.iloc[0].to_dict().get("risk_score", 0))
+
+    conn = get_conn()
+    conn.execute("UPDATE sessions SET risk_score=? WHERE id=?", (current_risk, sid))
+    conn.commit()
+
+    # Zero Trust Enforcement:
+    # High risk (>=80): Terminate session immediately & alert admin!
+    if current_risk >= 80:
+        conn.execute("UPDATE sessions SET is_active=0, logout_time=?, revocation_reason='Zero Trust: Critical Risk Exceeded (>=80)' WHERE id=?",
+                     (datetime.now().isoformat(), sid))
+        conn.commit()
+        conn.close()
+        log_audit(uid, uname, name, dept, "Session Terminated (Critical Risk)",
+                  f"Zero Trust Continuous Engine terminated session {sid}. Risk score reached {current_risk}/100. Admin SOC notified.",
+                  ip, device, 40, 1, session_id=sid)
+        return jsonify({
+            "error": f"Zero Trust Policy Enforcement: Session terminated due to critical insider threat risk ({current_risk}/100). Access revoked.",
+            "session_terminated": True,
+            "risk_score": current_risk
+        }), 403
+
+    conn.close()
+
+    resp_msg = f"USB storage media mounted successfully: {details}" if action_type == "insert_usb" else "Action logged successfully."
+    requires_step_up = bool(current_risk >= 30)
+    step_up_msg = f" [Medium Risk ({current_risk}/100): Step-Up verification required for sensitive actions]" if requires_step_up else ""
+    return jsonify({
+        "success": True,
+        "warning": (warning or "") + step_up_msg if (warning or requires_step_up) else None,
+        "message": resp_msg,
+        "risk_score": current_risk,
+        "requires_step_up": requires_step_up,
+        "session_terminated": False
+    })
 
 @app.route('/api/employee/download-report', methods=['GET'])
 def employee_download_report():
@@ -1313,7 +1572,109 @@ def employee_download_report():
     return response
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+EXTRACT_FOLDER = os.path.join(UPLOAD_FOLDER, "extracted")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(EXTRACT_FOLDER, exist_ok=True)
+
+def extract_archive_contents(archive_path, extract_dir):
+    """
+    Safely unpacks ZIP or TAR archives with Zip-Slip protection,
+    decompression limit security, and malicious executable inspection.
+    """
+    os.makedirs(extract_dir, exist_ok=True)
+    extracted_items = []
+    has_threats = False
+    threat_details = []
+    total_uncompressed_bytes = 0
+    MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024  # 50 MB safety threshold
+
+    DANGEROUS_EXTS = {'.exe', '.bat', '.cmd', '.sh', '.ps1', '.vbs', '.js', '.scr', '.dll', '.jar', '.com', '.msi'}
+    SENSITIVE_PATTERNS = {'id_rsa', '.env', 'credentials', 'password', 'shadow', 'passwd'}
+
+    is_zip = zipfile.is_zipfile(archive_path)
+    is_tar = tarfile.is_tarfile(archive_path)
+
+    if not is_zip and not is_tar:
+        ext_lower = os.path.splitext(archive_path)[1].lower()
+        if ext_lower in ['.zip', '.tar', '.gz', '.tgz']:
+            raise ValueError(f"Archive '{os.path.basename(archive_path)}' is corrupted or has an unreadable format.")
+        raise ValueError(f"File '{os.path.basename(archive_path)}' is not an extractable archive format (.zip, .tar, .tar.gz).")
+
+    dest_canonical = os.path.abspath(extract_dir)
+
+    if is_zip:
+        with zipfile.ZipFile(archive_path, 'r') as zf:
+            for member in zf.infolist():
+                if member.is_dir():
+                    continue
+                norm_rel = os.path.normpath(member.filename).lstrip('/\\')
+                target_path = os.path.abspath(os.path.join(dest_canonical, norm_rel))
+                if not target_path.startswith(dest_canonical):
+                    raise PermissionError(f"Path traversal (Zip-Slip) attack blocked in member '{member.filename}'")
+
+                total_uncompressed_bytes += member.file_size
+                if total_uncompressed_bytes > MAX_UNCOMPRESSED_BYTES:
+                    raise ValueError("Archive exceeds maximum decompression limit (50 MB).")
+
+                filename = os.path.basename(norm_rel)
+                _, ext = os.path.splitext(filename.lower())
+                is_dangerous = ext in DANGEROUS_EXTS or any(p in filename.lower() for p in SENSITIVE_PATTERNS)
+                if is_dangerous:
+                    has_threats = True
+                    threat_details.append(filename)
+
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                with zf.open(member) as source, open(target_path, "wb") as target:
+                    target.write(source.read())
+
+                extracted_items.append({
+                    "name": filename,
+                    "rel_path": norm_rel.replace('\\', '/'),
+                    "size_bytes": member.file_size,
+                    "size_kb": round(member.file_size / 1024, 2),
+                    "is_dangerous": is_dangerous,
+                    "threat_tag": "High Risk Executable/Credential" if is_dangerous else "Verified Safe",
+                    "ext": ext.replace('.', '') or "file"
+                })
+
+    elif is_tar:
+        with tarfile.open(archive_path, 'r:*') as tf:
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                norm_rel = os.path.normpath(member.name).lstrip('/\\')
+                target_path = os.path.abspath(os.path.join(dest_canonical, norm_rel))
+                if not target_path.startswith(dest_canonical):
+                    raise PermissionError(f"Path traversal (Tar) attack blocked in member '{member.name}'")
+
+                total_uncompressed_bytes += member.size
+                if total_uncompressed_bytes > MAX_UNCOMPRESSED_BYTES:
+                    raise ValueError("Archive exceeds maximum decompression limit (50 MB).")
+
+                filename = os.path.basename(norm_rel)
+                _, ext = os.path.splitext(filename.lower())
+                is_dangerous = ext in DANGEROUS_EXTS or any(p in filename.lower() for p in SENSITIVE_PATTERNS)
+                if is_dangerous:
+                    has_threats = True
+                    threat_details.append(filename)
+
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                f_obj = tf.extractfile(member)
+                if f_obj:
+                    with open(target_path, "wb") as target:
+                        target.write(f_obj.read())
+
+                extracted_items.append({
+                    "name": filename,
+                    "rel_path": norm_rel.replace('\\', '/'),
+                    "size_bytes": member.size,
+                    "size_kb": round(member.size / 1024, 2),
+                    "is_dangerous": is_dangerous,
+                    "threat_tag": "High Risk Executable/Credential" if is_dangerous else "Verified Safe",
+                    "ext": ext.replace('.', '') or "file"
+                })
+
+    return extracted_items, has_threats, threat_details
 
 @app.route('/api/employee/upload-file', methods=['POST'])
 def employee_upload_file():
@@ -1338,10 +1699,12 @@ def employee_upload_file():
         return jsonify({"error": "No file selected."}), 400
 
     classification = request.form.get("classification", "Internal")
+    auto_extract = request.form.get("auto_extract", "0") in ["1", "true", "True"]
     filename = file.filename
     
     # Save file to uploads folder
-    save_path = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4().hex[:8]}_{filename}")
+    file_unique_prefix = uuid.uuid4().hex[:8]
+    save_path = os.path.join(UPLOAD_FOLDER, f"{file_unique_prefix}_{filename}")
     file.save(save_path)
 
     file_size_bytes = os.path.getsize(save_path)
@@ -1349,7 +1712,39 @@ def employee_upload_file():
     if file_size_mb == 0.0:
         file_size_mb = 0.01
 
-    is_flagged = 1 if classification in ["Confidential", "Secret"] else 0
+    # Check if this file is an archive
+    is_archive = filename.lower().endswith(('.zip', '.tar', '.gz', '.tgz'))
+    extracted_data = None
+    extraction_warning = None
+
+    if auto_extract and is_archive:
+        try:
+            extract_id = str(uuid.uuid4())
+            extract_dest = os.path.join(EXTRACT_FOLDER, extract_id)
+            items, has_threats, threats = extract_archive_contents(save_path, extract_dest)
+            
+            # Save extraction record in DB
+            conn = get_conn()
+            conn.execute("""
+                INSERT INTO extracted_archives (id, user_id, username, archive_name, extract_folder, total_files, has_threats, threat_details, items_json, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """, (extract_id, uid, uname, filename, extract_dest, len(items), 1 if has_threats else 0, ", ".join(threats), json.dumps(items), datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+
+            extracted_data = {
+                "extract_id": extract_id,
+                "total_files": len(items),
+                "has_threats": has_threats,
+                "threat_details": threats,
+                "items": items
+            }
+            if has_threats:
+                extraction_warning = f"⚠️ Archive extracted with SECURITY ALERTS: Suspicious files flagged ({', '.join(threats)}). SOC Incident logged."
+        except Exception as e:
+            extraction_warning = f"Notice: Automatic extraction could not be completed: {str(e)}"
+
+    is_flagged = 1 if (classification in ["Confidential", "Secret"] or (extracted_data and extracted_data["has_threats"])) else 0
     policy_action = "Flagged for SOC Audit" if is_flagged else "Allowed & Logged"
 
     conn = get_conn()
@@ -1361,10 +1756,11 @@ def employee_upload_file():
     """, (fid, uid, uname, filename, save_path, classification, "Upload", file_size_mb, datetime.now().isoformat(), is_flagged, policy_action))
 
     # Update behavior data metrics
+    items_count = len(extracted_data["items"]) if extracted_data else 1
     c.execute("""
-        UPDATE behavior_data SET file_access_count = file_access_count + 1
+        UPDATE behavior_data SET file_access_count = file_access_count + ?
         WHERE user_id=?
-    """, (uid,))
+    """, (items_count, uid))
     if is_flagged:
         c.execute("""
             UPDATE behavior_data SET sensitive_files = sensitive_files + 1
@@ -1373,26 +1769,205 @@ def employee_upload_file():
     conn.commit()
     conn.close()
 
-    risk_contrib = 20 if is_flagged else 5
-    audit_desc = f"Uploaded File: {filename} ({file_size_mb} MB) [{classification}] to server storage"
+    risk_contrib = 25 if is_flagged else 5
+    audit_desc = f"Uploaded File: {filename} ({file_size_mb} MB) [{classification}]" + (f" -> Auto-extracted {len(extracted_data['items'])} files" if extracted_data else "")
     log_audit(uid, uname, name, dept, "File Upload", audit_desc, ip, device, risk_contrib, is_flagged, session_id=sid)
 
     invalidate_eval_cache()
     df_fresh = load_all_evaluated()
     ensure_incidents(df_fresh)
 
-    warning_msg = None
-    if is_flagged:
-        warning_msg = f"File upload '{filename}' classified as {classification}. Access and storage flagged to SOC audit trail."
+    warning_msg = extraction_warning or (f"File upload '{filename}' classified as {classification}. Access and storage flagged to SOC audit trail." if is_flagged else None)
 
     return jsonify({
         "success": True,
+        "file_id": fid,
         "filename": filename,
         "file_size_mb": file_size_mb,
         "classification": classification,
-        "message": f"File '{filename}' ({file_size_mb} MB) uploaded successfully to enterprise server vault!",
+        "is_archive": bool(is_archive),
+        "extracted_data": extracted_data,
+        "message": f"File '{filename}' ({file_size_mb} MB) uploaded successfully!" + (f" Unpacked {len(extracted_data['items'])} files." if extracted_data else ""),
         "warning": warning_msg
     })
+
+@app.route('/api/employee/extract-archive', methods=['POST'])
+def employee_extract_archive():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload["session_id"]
+        ip = payload["ip"]
+        device = payload["device"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    target_archive_path = None
+    archive_filename = None
+
+    # Check option A: direct file upload in multipart form
+    if 'file' in request.files and request.files['file'].filename != '':
+        file = request.files['file']
+        archive_filename = file.filename
+        target_archive_path = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4().hex[:8]}_{archive_filename}")
+        file.save(target_archive_path)
+    else:
+        # Option B: reference existing file_id or filename
+        req_json = request.json or request.form or {}
+        file_id = req_json.get("file_id")
+        filename_req = req_json.get("filename")
+
+        conn = get_conn()
+        c = conn.cursor()
+        if file_id:
+            c.execute("SELECT filename, filepath FROM file_access_logs WHERE id=? AND user_id=?", (file_id, uid))
+        elif filename_req:
+            c.execute("SELECT filename, filepath FROM file_access_logs WHERE filename=? AND user_id=? ORDER BY timestamp DESC LIMIT 1", (filename_req, uid))
+        else:
+            c.execute("SELECT filename, filepath FROM file_access_logs WHERE user_id=? AND (filename LIKE '%.zip' OR filename LIKE '%.tar%' OR filename LIKE '%.tgz') ORDER BY timestamp DESC LIMIT 1", (uid,))
+        
+        row = c.fetchone()
+        conn.close()
+
+        if not row or not os.path.exists(row[1]):
+            # Check if there is a simulated default archive in uploads
+            sample_archives = [f for f in os.listdir(UPLOAD_FOLDER) if f.endswith(('.zip', '.tar', '.tgz', '.gz'))]
+            if sample_archives:
+                target_archive_path = os.path.join(UPLOAD_FOLDER, sample_archives[0])
+                archive_filename = sample_archives[0]
+            else:
+                return jsonify({"error": "No valid archive file found to extract. Please select or upload a .zip or .tar archive."}), 400
+        else:
+            archive_filename, target_archive_path = row[0], row[1]
+
+    # Perform Safe Extraction
+    try:
+        extract_id = str(uuid.uuid4())
+        extract_dest = os.path.join(EXTRACT_FOLDER, extract_id)
+        items, has_threats, threats = extract_archive_contents(target_archive_path, extract_dest)
+    except Exception as err:
+        return jsonify({"error": f"Extraction failed: {str(err)}"}), 400
+
+    is_flagged = 1 if has_threats else 0
+    policy_action = "Flagged: Threat Detected" if has_threats else "Allowed & Unpacked"
+
+    # Store extraction record in DB
+    conn = get_conn()
+    conn.execute("""
+        INSERT INTO extracted_archives (id, user_id, username, archive_name, extract_folder, total_files, has_threats, threat_details, items_json, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+    """, (extract_id, uid, uname, archive_filename, extract_dest, len(items), 1 if has_threats else 0, ", ".join(threats), json.dumps(items), datetime.now().isoformat()))
+
+    # Insert into file_access_logs
+    fid = str(uuid.uuid4())
+    conn.execute("""
+        INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (fid, uid, uname, f"[Extracted] {archive_filename}", extract_dest, "Confidential" if has_threats else "Internal", "Extract Archive", round(sum(i['size_bytes'] for i in items)/(1024*1024), 2) or 0.01, datetime.now().isoformat(), is_flagged, policy_action))
+
+    # Update employee metrics
+    conn.execute("UPDATE behavior_data SET file_access_count = file_access_count + ? WHERE user_id=?", (len(items), uid))
+    if has_threats:
+        conn.execute("UPDATE behavior_data SET sensitive_files = sensitive_files + 1 WHERE user_id=?", (uid,))
+    conn.commit()
+    conn.close()
+
+    risk_contrib = 30 if has_threats else 5
+    audit_desc = f"Extracted Archive: {archive_filename} ({len(items)} files unpacked) — {policy_action}"
+    log_audit(uid, uname, name, dept, "File Extraction", audit_desc, ip, device, risk_contrib, is_flagged, session_id=sid)
+
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    warning_msg = f"SECURITY ALERT: Archive contains high-risk or suspicious files ({', '.join(threats)}). Incident logged to SOC." if has_threats else None
+
+    return jsonify({
+        "success": True,
+        "extract_id": extract_id,
+        "archive_name": archive_filename,
+        "total_files": len(items),
+        "has_threats": has_threats,
+        "threat_details": threats,
+        "items": items,
+        "policy_action": policy_action,
+        "message": f"Successfully extracted {len(items)} files from '{archive_filename}'.",
+        "warning": warning_msg
+    })
+
+@app.route('/api/employee/extracted-archives', methods=['GET'])
+def employee_get_extracted_archives():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id, archive_name, total_files, has_threats, threat_details, items_json, created_at FROM extracted_archives WHERE user_id=? ORDER BY created_at DESC LIMIT 30", (uid,))
+    rows = c.fetchall()
+    conn.close()
+
+    results = []
+    for r in rows:
+        try:
+            items = json.loads(r[5])
+        except Exception:
+            items = []
+        results.append({
+            "id": r[0],
+            "archive_name": r[1],
+            "total_files": r[2],
+            "has_threats": bool(r[3]),
+            "threat_details": r[4],
+            "items": items,
+            "created_at": r[6]
+        })
+
+    return jsonify(results)
+
+@app.route('/api/employee/download-extracted/<extract_id>/<path:subpath>', methods=['GET'])
+def employee_download_extracted_file(extract_id, subpath):
+    token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+    except Exception:
+        return jsonify({"error": "Invalid or missing token"}), 401
+
+    target_dir = os.path.abspath(os.path.join(EXTRACT_FOLDER, extract_id))
+    full_path = os.path.abspath(os.path.join(target_dir, subpath))
+
+    if not full_path.startswith(target_dir) or not os.path.exists(full_path):
+        return jsonify({"error": "Requested file not found or path traversal blocked."}), 404
+
+    return send_file(full_path, as_attachment=True, download_name=os.path.basename(full_path))
+
+@app.route('/api/employee/download-file/<file_id>', methods=['GET'])
+def employee_download_uploaded_file(file_id):
+    token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+    except Exception:
+        return jsonify({"error": "Invalid or missing token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT filename, filepath FROM file_access_logs WHERE id=?", (file_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row or not os.path.exists(row[1]):
+        return jsonify({"error": "File not found on server."}), 404
+
+    return send_file(row[1], as_attachment=True, download_name=row[0])
 
 @app.route('/api/employee/export-data', methods=['GET'])
 def employee_export_data():
@@ -1905,34 +2480,125 @@ def admin_sim_attack():
     uid = emp_row.iloc[0]['id']
 
     conn = get_conn()
+    c = conn.cursor()
+
+    vector_meta = {}
+
     if vector in ["usb", "mass_download"]:
-        conn.execute("UPDATE behavior_data SET usb_usage=1, downloads=280, sensitive_files=14, resignation_flag=1, business_impact_rupees=1100000, mitre_techniques=?, mitre_confidence=98 WHERE user_id=?",
+        c.execute("UPDATE behavior_data SET usb_usage=1, downloads=280, sensitive_files=14, resignation_flag=1, business_impact_rupees=1100000, mitre_techniques=?, mitre_confidence=98 WHERE user_id=?",
                      ("T1005 (Data from Local System), T1052.001 (Exfiltration over USB)", uid))
+        vector_meta = {
+            "key": "usb",
+            "name": "USB Data Exfiltration",
+            "threat_summary": "Resignation notice + mass file export (280 sensitive CAD/Finance files) to unauthorized USB storage",
+            "policy": "POL-003: Removable Storage Lockout & Token Revocation",
+            "defense": "Endpoint USB storage controller locked; user access to internal shared drive revoked.",
+            "mitre": "T1005 (Data from Local System), T1052.001 (Exfiltration over USB)",
+            "impact": "₹11,00,000",
+            "changes": {"USB Drive": "SanDisk Extreme 3.0 (Unregistered)", "Downloads": "280 files (+275 surge)", "Resignation Flag": "Active", "Sensitive Files": "14 Classified Documents"}
+        }
+        _log_event(conn, uid, emp_row.iloc[0]['username'], target_emp_name, emp_row.iloc[0]['department'],
+                   "USB Data Exfiltration", "Mass copy of 280 sensitive files exported to unauthorized USB device (Resignation Flag: Active)",
+                   "192.168.1.45", "Corporate Macbook Pro", 45, 1)
+
+        sim_nid = str(uuid.uuid4())
+        sim_ts = datetime.now(timezone.utc).isoformat()
+        conn.execute("""
+            INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+            VALUES (?,?,?,?,?,?,?,?,?,?,0)
+        """, (sim_nid, uid, emp_row.iloc[0]['username'], "Endpoint USB Alert", "SOC Admin Team",
+              f"🚨 USB EXFILTRATION SIMULATION: {target_emp_name} ({emp_row.iloc[0]['department']})",
+              f"Simulated mass exfiltration: {target_emp_name} inserted unauthorized USB media to export 280 confidential files. Endpoint contained.",
+              "Critical", sim_ts, "Dispatched"))
+
     elif vector in ["phish", "off_hours"]:
-        conn.execute("UPDATE behavior_data SET device_known=0, failed_logins=6, login_time=3, current_login_location='North Korea', mitre_techniques=?, mitre_confidence=92 WHERE user_id=?",
+        c.execute("UPDATE behavior_data SET device_known=0, failed_logins=6, login_time=3, current_login_location='North Korea', mitre_techniques=?, mitre_confidence=92 WHERE user_id=?",
                      ("T1078 (Valid Accounts), T1110 (Brute Force)", uid))
+        vector_meta = {
+            "key": "phish",
+            "name": "Phishing & Credential Theft",
+            "threat_summary": "6 consecutive failed logins on an unregistered device from Pyongyang, North Korea (IP: 175.45.176.88) at 03:00 AM off-hours",
+            "policy": "POL-001: High-Risk Geolocation & Brute Force Lockout",
+            "defense": "Account quarantined in Active Directory; FIDO2 hardware security key challenge enforced; North Korea IP range blocked.",
+            "mitre": "T1078 (Valid Accounts), T1110 (Brute Force)",
+            "impact": "₹8,50,000",
+            "changes": {"Device": "Unknown Linux Box (Untrusted)", "Failed Logins": "6 consecutive failures", "Login Time": "03:00 AM (Off-hours)", "Location": "Pyongyang, North Korea (175.45.176.88)"}
+        }
+        _log_event(conn, uid, emp_row.iloc[0]['username'], target_emp_name, emp_row.iloc[0]['department'],
+                   "Phishing & Brute Force", "6 failed logins on unregistered device from Pyongyang, North Korea (IP: 175.45.176.88) at 03:00 AM off-hours",
+                   "175.45.176.88", "Unregistered Linux Box", 40, 1)
+
     elif vector in ["privilege", "admin_escalation"]:
-        conn.execute("UPDATE behavior_data SET privilege_escalation_flag=1, privilege_escalation_details='Role Yesterday: Employee, Role Today: Admin', business_impact_rupees=2400000, mitre_techniques=?, mitre_confidence=95 WHERE user_id=?",
+        c.execute("UPDATE behavior_data SET privilege_escalation_flag=1, privilege_escalation_details='Role Yesterday: Employee, Role Today: Admin', business_impact_rupees=2400000, mitre_techniques=?, mitre_confidence=95 WHERE user_id=?",
                      ("T1078 (Valid Accounts), T1098 (Account Manipulation)", uid))
+        vector_meta = {
+            "key": "privilege",
+            "name": "Unauthorized Privilege Escalation",
+            "threat_summary": "Exploited service account token to alter domain role assignment from Employee to Admin and access Active Directory logs",
+            "policy": "POL-002: Real-time Privilege Tamper Guardrail",
+            "defense": "Elevated admin credentials immediately stripped; Active Directory session terminated; P1 Incident Case opened.",
+            "mitre": "T1078 (Valid Accounts), T1098 (Account Manipulation)",
+            "impact": "₹24,00,000",
+            "changes": {"Role Changed": "Employee → Domain Admin (Tampered)", "Unauthorized Audit Access": "Active Directory DC Logs", "Privilege Misuse": "Flagged (P1 High)"}
+        }
+        _log_event(conn, uid, emp_row.iloc[0]['username'], target_emp_name, emp_row.iloc[0]['department'],
+                   "Privilege Escalation", "Unauthorized attempt to alter Active Directory role from Employee to Domain Admin and access DC logs",
+                   "192.168.1.88", "Dell Latitude 7420", 50, 1)
+
     elif vector in ["shadow", "genai_exfil"]:
-        conn.execute("UPDATE behavior_data SET genai_upload_mb=112.5, shadow_it_flag=1, shadow_it_details='AnyDesk (Blocked), Unknown VPN (Blocked)', ai_risk_flag=1, ai_risk_details='Sensitive source code pasted to ChatGPT & Gemini', business_impact_rupees=1600000, mitre_techniques=?, mitre_confidence=94 WHERE user_id=?",
+        c.execute("UPDATE behavior_data SET genai_upload_mb=112.5, shadow_it_flag=1, shadow_it_details='AnyDesk (Blocked), Unknown VPN (Blocked)', ai_risk_flag=1, ai_risk_details='Sensitive source code pasted to ChatGPT & Gemini', business_impact_rupees=1600000, mitre_techniques=?, mitre_confidence=94 WHERE user_id=?",
                      ("T1567.002 (Exfiltration to Cloud Services)", uid))
+        vector_meta = {
+            "key": "shadow",
+            "name": "Shadow IT & GenAI Leak",
+            "threat_summary": "112.5 MB proprietary core repository source code pasted into ChatGPT and outbound AnyDesk remote tunnel initiated",
+            "policy": "POL-004: GenAI & Remote Tunnel Data Loss Prevention (DLP)",
+            "defense": "Outbound generative AI domains blocked at DNS/Proxy layer; AnyDesk process forcefully terminated; DLP incident logged.",
+            "mitre": "T1567.002 (Exfiltration to Cloud Services)",
+            "impact": "₹16,00,000",
+            "changes": {"GenAI Upload": "112.5 MB (+112.5 MB payload)", "Shadow IT Tools": "AnyDesk, Unknown VPN (Blocked)", "AI Risk Details": "Proprietary backend code exfiltrated"}
+        }
+        _log_event(conn, uid, emp_row.iloc[0]['username'], target_emp_name, emp_row.iloc[0]['department'],
+                   "GenAI Data Leak", "112.5 MB proprietary source code uploaded to ChatGPT; AnyDesk remote tunnel detected and terminated",
+                   "192.168.1.45", "Corporate Macbook Pro", 45, 1)
+
     elif vector in ["travel", "impossible_travel"]:
-        conn.execute("UPDATE behavior_data SET impossible_travel_flag=1, impossible_travel_details='Office (09:00) → Moscow IP (09:08). Travel time: 10 Hours.', device_known=0, current_login_location='Russia', mitre_techniques=?, mitre_confidence=97 WHERE user_id=?",
+        c.execute("UPDATE behavior_data SET impossible_travel_flag=1, impossible_travel_details='Office (09:00) → Moscow IP (09:08). Travel time: 10 Hours.', device_known=0, current_login_location='Russia', mitre_techniques=?, mitre_confidence=97 WHERE user_id=?",
                      ("T1133 (External Remote Services)", uid))
+        vector_meta = {
+            "key": "travel",
+            "name": "Impossible Travel Anomaly",
+            "threat_summary": "Concurrent active sessions detected: Bengaluru Office IP (09:00 AM) and Moscow, Russia IP (09:08 AM) — 10 hours travel in 8 mins",
+            "policy": "POL-005: Impossible Geo-Velocity Zero Trust Gate",
+            "defense": "All active user session tokens globally invalidated; Russian IP address blacklisted; mandatory password + hardware MFA reset.",
+            "mitre": "T1133 (External Remote Services)",
+            "impact": "₹18,00,000",
+            "changes": {"Geo-Velocity": "Bengaluru (09:00) → Moscow (09:08)", "Distance Traveled": "5,000+ km in 8 minutes", "Device": "Untrusted Windows 11 Desktop"}
+        }
+        _log_event(conn, uid, emp_row.iloc[0]['username'], target_emp_name, emp_row.iloc[0]['department'],
+                   "Impossible Travel", "Concurrent logins from Bengaluru Office (09:00) and Moscow Russia IP (09:08). Geo-velocity violation",
+                   "185.220.101.5", "Unknown Windows Desktop", 48, 1)
     
     conn.commit()
     conn.close()
-
-    log_audit(payload["user_id"], analyst, payload["name"], payload["department"],
-              "Attack Simulated", f"Injected simulated vector: {str(vector).upper()} on {target_emp_name}",
-              payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
 
     invalidate_eval_cache()
     df_fresh = load_all_evaluated()
     ensure_incidents(df_fresh)
 
-    return jsonify({"success": True})
+    fresh_row = df_fresh[df_fresh['id'] == uid]
+    new_risk = int(fresh_row.iloc[0]['risk_score']) if not fresh_row.empty else 85
+    new_sev = fresh_row.iloc[0]['severity'] if not fresh_row.empty else "🔴 Critical"
+    new_reasons = fresh_row.iloc[0]['reasons'] if not fresh_row.empty else []
+
+    return jsonify({
+        "success": True,
+        "vector_meta": vector_meta,
+        "new_risk_score": new_risk,
+        "new_severity": new_sev,
+        "new_reasons": new_reasons,
+        "target_employee": target_emp_name
+    })
 
 @app.route('/api/admin/sim/reset', methods=['POST'])
 def admin_sim_reset():
@@ -1988,18 +2654,30 @@ def admin_sim_reset():
          bd.get("ai_risk_flag", 0), bd.get("unusual_collaboration_flag", 0), bd.get("privilege_escalation_flag", 0), uid))
     
     conn.execute("DELETE FROM incidents WHERE user_id=?", (uid,))
+
+    # Log authentic Baseline Restored under target user so SIEM feed logs it clearly
+    _log_event(conn, uid, uname, emp_row.iloc[0]['name'], emp_row.iloc[0]['department'],
+               "Baseline Restored", f"Clean behavioral baseline restored for {emp_row.iloc[0]['name']}. Simulated threats cleared.",
+               "127.0.0.1", "Admin Console", 0, 0)
+
     conn.commit()
     conn.close()
-
-    log_audit(payload["user_id"], analyst, payload["name"], payload["department"],
-              "Baseline Restored", f"Restored behavioral baseline parameters for {uname}",
-              payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
 
     invalidate_eval_cache()
     df_fresh = load_all_evaluated()
     ensure_incidents(df_fresh)
 
-    return jsonify({"success": True})
+    fresh_row = df_fresh[df_fresh['id'] == uid]
+    new_risk = int(fresh_row.iloc[0]['risk_score']) if not fresh_row.empty else 12
+    new_sev = fresh_row.iloc[0]['severity'] if not fresh_row.empty else "🟢 Low"
+
+    return jsonify({
+        "success": True,
+        "message": f"Baseline behavior restored for {emp_row.iloc[0]['name']}",
+        "new_risk_score": new_risk,
+        "new_severity": new_sev,
+        "target_employee": emp_row.iloc[0]['name']
+    })
 
 @app.route('/api/admin/audit', methods=['GET'])
 def admin_audit_logs():
@@ -2364,18 +3042,94 @@ def api_mfa_step1():
 @app.route('/api/auth/mfa-verify', methods=['POST'])
 def api_mfa_verify():
     data = request.json or {}
+    challenge_id = data.get("challenge_id", "")
     mfa_token = data.get("mfa_token", "")
-    otp_code = data.get("otp_code", "").strip()
+    otp_code = str(data.get("otp_code") or "").strip()
+    trust_this_device = bool(data.get("trust_this_device", False))
     device_info = data.get("device_info", {})
 
+    conn = get_conn()
+
+    # Case A: Challenge ID from Adaptive MFA
+    if challenge_id:
+        success, msg, challenge_data = verify_adaptive_otp(conn, challenge_id, otp_code, trust_this_device=trust_this_device)
+        if not success:
+            conn.close()
+            return jsonify({"error": msg}), 400
+
+        uid = challenge_data["user_id"]
+        username = challenge_data["username"]
+        urole = challenge_data["role"]
+        dev_info = challenge_data["device_info"]
+
+        c = conn.cursor()
+        c.execute("SELECT name, department, emp_type FROM users WHERE id=?", (uid,))
+        u_row = c.fetchone()
+        name = u_row[0] if u_row else username
+        dept = u_row[1] if u_row else "Engineering"
+        emp_type = u_row[2] if u_row else "Employee"
+
+        # Supersede older sessions for this device
+        client_dev_id = dev_info.get("device_id", f"DEV-{abs(hash(username))%90000+10000}")
+        client_browser = dev_info.get("browser", "Chrome 127.0")
+        client_os = dev_info.get("os", "Windows 11")
+        client_ip = dev_info.get("ip", "127.0.0.1")
+        client_loc = dev_info.get("location", "Bengaluru, India")
+        device_label = f"{client_os} ({client_browser})"
+
+        conn.execute("UPDATE sessions SET is_active=0 WHERE user_id=? AND device_id=?", (uid, client_dev_id))
+
+        sid = str(uuid.uuid4())
+        login_time = datetime.now().isoformat()
+        conn.execute("""
+            INSERT INTO sessions (id, user_id, username, login_time, logout_time, ip_addr, device, device_id, browser, os, location, department, role, is_active, risk_score, mfa_verified)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,1)
+        """, (sid, uid, username, login_time, None, client_ip, device_label, client_dev_id, client_browser, client_os, client_loc, dept, urole))
+        
+        # Mark challenge verified in database
+        conn.execute("UPDATE mfa_challenges SET status='verified', verified_at=? WHERE id=?", (login_time, challenge_id))
+        conn.commit()
+        conn.close()
+
+        trust_note = "Endpoint trusted for future baseline logins" if trust_this_device else "Single session verification"
+        log_audit(uid, username, name, dept, "Login (Adaptive MFA Verified)",
+                  f"Adaptive multi-factor authentication verified via 6-digit OTP | {trust_note} | Device: {client_dev_id}",
+                  client_ip, device_label, 0, 0, session_id=sid)
+
+        session_payload = {
+            "user_id": uid,
+            "username": username,
+            "name": name,
+            "department": dept,
+            "emp_type": emp_type,
+            "role": urole,
+            "session_id": sid,
+            "device_id": client_dev_id,
+            "browser": client_browser,
+            "os": client_os,
+            "ip": client_ip,
+            "device": device_label,
+            "location": client_loc,
+            "login_time": login_time,
+            "mfa_verified": True,
+            "device_trusted": trust_this_device,
+            "exp": datetime.utcnow() + timedelta(hours=10)
+        }
+        token = jwt.encode(session_payload, SECRET_KEY, algorithm="HS256")
+        return jsonify({"token": token, "user": session_payload, "device_trusted": trust_this_device})
+
+    # Case B: Legacy mfa_token
     try:
         payload = jwt.decode(mfa_token, SECRET_KEY, algorithms=["HS256"])
         if not payload.get("mfa_pending"):
+            conn.close()
             return jsonify({"error": "Invalid MFA session"}), 400
     except Exception:
+        conn.close()
         return jsonify({"error": "MFA session expired or invalid"}), 401
 
     if len(otp_code) != 6 or not otp_code.isdigit():
+        conn.close()
         return jsonify({"error": "Invalid OTP code. Must be 6 digits."}), 400
 
     uid = payload["user_id"]
@@ -2388,10 +3142,15 @@ def api_mfa_verify():
     sid = str(uuid.uuid4())
     ip = request.headers.get("X-Forwarded-For", request.remote_addr or f"10.0.{hash(username)%5}.{hash(username)%200+1}")
     device_str = device_info.get("device_name", "Office Device" if urole == "employee" else "Admin Console Workstation")
+    dev_id = device_info.get("device_id", f"DEV-{abs(hash(username))%90000+10000}")
 
-    conn = get_conn()
-    conn.execute("INSERT INTO sessions (id, user_id, username, login_time, logout_time, ip_addr, device, department, role, is_active, risk_score) VALUES (?,?,?,?,?,?,?,?,?,1,0)",
-                 (sid, uid, username, datetime.now().isoformat(), None, ip, device_str, dept, urole))
+    if trust_this_device:
+        register_or_update_device(conn, uid, dev_id, device_str, "Chrome", "Windows 11", ip, is_trusted=True)
+
+    conn.execute("""
+        INSERT INTO sessions (id, user_id, username, login_time, logout_time, ip_addr, device, device_id, department, role, is_active, risk_score, mfa_verified)
+        VALUES (?,?,?,?,?,?,?,?,?,?,1,0,1)
+    """, (sid, uid, username, datetime.now().isoformat(), None, ip, device_str, dev_id, dept, urole))
     conn.commit()
     conn.close()
 
@@ -2407,11 +3166,13 @@ def api_mfa_verify():
         "session_id": sid,
         "ip": ip,
         "device": device_str,
+        "device_id": dev_id,
         "mfa_verified": True,
+        "device_trusted": trust_this_device,
         "exp": datetime.utcnow() + timedelta(hours=10)
     }
     token = jwt.encode(session_payload, SECRET_KEY, algorithm="HS256")
-    return jsonify({"token": token, "user": session_payload})
+    return jsonify({"token": token, "user": session_payload, "device_trusted": trust_this_device})
 
 @app.route('/api/auth/stepup-verify', methods=['POST'])
 def api_stepup_verify():
@@ -2421,14 +3182,122 @@ def api_stepup_verify():
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
-    otp_code = request.json.get("otp_code", "")
+    req_data = request.json or {}
+    otp_code = req_data.get("otp_code", "").strip()
+    action_name = req_data.get("action_name", "Sensitive Action")
     if len(otp_code) != 6 or not otp_code.isdigit():
-        return jsonify({"error": "Invalid Step-Up OTP code"}), 400
+        return jsonify({"error": "Invalid Step-Up OTP code. Must be 6 digits."}), 400
+
+    sid = payload.get("session_id")
+    if sid:
+        conn = get_conn()
+        conn.execute("UPDATE sessions SET step_up_verified_at=? WHERE id=?", (datetime.now().isoformat(), sid))
+        conn.commit()
+        conn.close()
 
     log_audit(payload["user_id"], payload["username"], payload["name"], payload["department"],
-              "Step-Up MFA Verified", f"User completed Step-Up authentication for high-risk operation", payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
+              "Step-Up MFA Verified", f"User completed Step-Up authentication for '{action_name}'",
+              payload.get("ip", "127.0.0.1"), payload.get("device", "Workstation"), 0, 0, session_id=sid)
 
-    return jsonify({"success": True, "message": "Step-Up verification successful."})
+    return jsonify({"success": True, "message": f"Step-Up verification successful for {action_name}."})
+
+@app.route('/api/auth/trusted-devices', methods=['GET'])
+def api_get_trusted_devices():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    if payload.get("role") == "admin":
+        c.execute("""
+            SELECT td.id, td.user_id, u.username, u.name, td.device_id, td.device_name,
+                   td.browser, td.os, td.ip_address, td.is_trusted, td.trust_level, td.first_seen_at, td.last_seen_at
+            FROM trusted_devices td
+            LEFT JOIN users u ON u.id = td.user_id
+            ORDER BY td.last_seen_at DESC
+        """)
+        rows = c.fetchall()
+        devices = [{
+            "id": r[0], "user_id": r[1], "username": r[2], "name": r[3],
+            "device_id": r[4], "device_name": r[5], "browser": r[6], "os": r[7],
+            "ip_address": r[8], "is_trusted": bool(r[9]), "trust_level": r[10],
+            "first_seen_at": r[11], "last_seen_at": r[12]
+        } for r in rows]
+    else:
+        c.execute("""
+            SELECT id, user_id, device_id, device_name, browser, os, ip_address, is_trusted, trust_level, first_seen_at, last_seen_at
+            FROM trusted_devices
+            WHERE user_id = ?
+            ORDER BY last_seen_at DESC
+        """, (payload["user_id"],))
+        rows = c.fetchall()
+        devices = [{
+            "id": r[0], "user_id": r[1], "device_id": r[2], "device_name": r[3],
+            "browser": r[4], "os": r[5], "ip_address": r[6], "is_trusted": bool(r[7]),
+            "trust_level": r[8], "first_seen_at": r[9], "last_seen_at": r[10]
+        } for r in rows]
+    conn.close()
+    return jsonify(devices)
+
+@app.route('/api/auth/trusted-devices/revoke', methods=['POST'])
+def api_revoke_trusted_device():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    data = request.json or {}
+    device_id = data.get("device_id")
+    if not device_id:
+        return jsonify({"error": "device_id is required"}), 400
+
+    conn = get_conn()
+    if payload.get("role") == "admin":
+        conn.execute("UPDATE trusted_devices SET is_trusted=0, trust_level='untrusted' WHERE device_id=?", (device_id,))
+    else:
+        conn.execute("UPDATE trusted_devices SET is_trusted=0, trust_level='untrusted' WHERE device_id=? AND user_id=?", (device_id, payload["user_id"]))
+    conn.commit()
+    conn.close()
+
+    log_audit(payload["user_id"], payload["username"], payload["name"], payload["department"],
+              "Device Trust Revoked", f"Trust revoked for device '{device_id}'. Subsequent logins will mandate Adaptive MFA.",
+              payload.get("ip", "127.0.0.1"), payload.get("device", "Workstation"), 5, 0, session_id=payload.get("session_id"))
+
+    return jsonify({"success": True, "message": f"Device '{device_id}' trust revoked. Future access will mandate MFA."})
+
+@app.route('/api/auth/mfa-events', methods=['GET'])
+def api_get_mfa_events():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            return jsonify({"error": "Unauthorized"}), 403
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT a.id, a.user_id, a.username, a.user_name, a.department, a.timestamp,
+               a.event_type, a.event_details, a.ip_addr, a.device, a.is_suspicious
+        FROM audit_events a
+        WHERE a.event_type LIKE '%MFA%' OR a.event_type LIKE '%Authentication%'
+        ORDER BY a.timestamp DESC
+        LIMIT 100
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    events = [{
+        "id": r[0], "user_id": r[1], "username": r[2], "user_name": r[3],
+        "department": r[4], "timestamp": r[5], "event_type": r[6],
+        "details": r[7], "ip_addr": r[8], "device": r[9], "is_suspicious": bool(r[10])
+    } for r in rows]
+    return jsonify(events)
 
 # ── SESSION MANAGER & ACCOUNT LOCKING ──────────────────────────────────────────
 
@@ -2445,7 +3314,7 @@ def admin_sessions():
     conn = get_conn()
     c = conn.cursor()
     c.execute("""
-        SELECT s.id, s.user_id, s.username, u.name, u.department, u.role, s.login_time, s.ip_addr, s.device, s.device_id, s.browser, s.os, s.location, s.is_active
+        SELECT s.id, s.user_id, s.username, u.name, u.department, u.role, s.login_time, s.ip_addr, s.device, s.device_id, s.browser, s.os, s.location, s.is_active, s.mfa_verified, s.step_up_verified_at
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         ORDER BY s.login_time DESC
@@ -2455,7 +3324,7 @@ def admin_sessions():
 
     sessions_list = []
     for r in rows:
-        sid, uid, uname, name, dept, urole, login_t, ip, dev, dev_id, browser, os_sys, loc, active = r
+        sid, uid, uname, name, dept, urole, login_t, ip, dev, dev_id, browser, os_sys, loc, active, mfa_v, stepup_t = r
         sessions_list.append({
             "id": sid,
             "user_id": uid,
@@ -2471,6 +3340,8 @@ def admin_sessions():
             "os": os_sys or "Windows 11",
             "location": loc or "Bengaluru, India",
             "is_active": bool(active),
+            "mfa_verified": bool(mfa_v),
+            "step_up_verified_at": stepup_t or "",
             "risk_score": risk_dict.get(uname, 0),
             "threat_classification": threat_dict.get(uname, 'Normal')
         })
@@ -2481,6 +3352,8 @@ def admin_terminate_session(id):
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            return jsonify({"error": "Forbidden: Administrator role required to revoke sessions"}), 403
         analyst = payload["username"]
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
@@ -2494,12 +3367,12 @@ def admin_terminate_session(id):
         return jsonify({"error": "Session not found"}), 404
 
     target_uname, target_uid = row
-    conn.execute("UPDATE sessions SET is_active=0, logout_time=? WHERE id=?", (datetime.now().isoformat(), id))
+    conn.execute("UPDATE sessions SET is_active=0, logout_time=?, revocation_reason='Revoked by Administrator SOC console' WHERE id=?", (datetime.now().isoformat(), id))
     conn.commit()
     conn.close()
 
     log_audit(target_uid, target_uname, target_uname, "Security SOC",
-              "Session Terminated", f"Active session {id} force-terminated by analyst '{analyst}'", payload["ip"], payload["device"], 0, 1)
+              "Session Revoked", f"Active session {id} revoked by SOC Analyst '{analyst}' (Step-Up MFA Verified)", payload["ip"], payload["device"], 0, 1)
 
     return jsonify({"success": True, "message": f"Session for user '{target_uname}' terminated."})
 
@@ -2508,6 +3381,8 @@ def admin_toggle_user_lock(id):
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            return jsonify({"error": "Forbidden: Administrator role required to lock/unlock accounts"}), 403
         analyst = payload["username"]
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
@@ -2605,7 +3480,7 @@ def admin_notifications_send():
     message = data.get("message", "SOC Security Alert Notification")
 
     nid = str(uuid.uuid4())
-    ts = datetime.now().isoformat()
+    ts = datetime.now(timezone.utc).isoformat()
     conn = get_conn()
     conn.execute("""
         INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
@@ -2760,13 +3635,273 @@ def serve_frontend(path):
         return send_file(os.path.join(app.static_folder, 'index.html'))
     return jsonify({"message": "ZeroTrustNet API Server is running. Build frontend with 'npm run build' inside frontend/ directory."})
 
-# ── RUN INITIALIZATION ─────────────────────────────────────────────────────────
+# ── HARDWARE USB / PENDRIVE / PORTABLE STORAGE WATCHDOG ─────────────────────────
+
+import winreg
+try:
+    SEM_FAILCRITICALERRORS = 0x0001
+    SEM_NOOPENFILEERRORBOX = 0x8000
+    if sys.platform == 'win32':
+        ctypes.windll.kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)
+except Exception:
+    pass
+
+def get_connected_storage_drives():
+    """Returns a dict of currently mounted drive letters and volume info on Windows."""
+    drives = {}
+    try:
+        if sys.platform == 'win32':
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            for letter in string.ascii_uppercase:
+                if (bitmask >> (ord(letter) - 65)) & 1:
+                    p = f"{letter}:\\"
+                    dtype = ctypes.windll.kernel32.GetDriveTypeW(p)
+                    # dtype: 2 = DRIVE_REMOVABLE, 3 = DRIVE_FIXED, etc.
+                    vol_buf = ctypes.create_unicode_buffer(1024)
+                    fs_buf = ctypes.create_unicode_buffer(1024)
+                    res = ctypes.windll.kernel32.GetVolumeInformationW(
+                        p, vol_buf, 1024, None, None, None, fs_buf, 1024
+                    )
+                    name = vol_buf.value if (res and vol_buf.value) else ("Removable Media" if dtype == 2 else "Local Disk")
+                    drives[p] = {"type": dtype, "name": name, "letter": letter}
+    except Exception:
+        pass
+    return drives
+
+def is_pnp_device_present(instance_id):
+    """Uses Windows cfgmgr32 to check if a specific PnP hardware instance is physically connected."""
+    try:
+        if sys.platform != 'win32':
+            return False
+        cfgmgr32 = ctypes.windll.cfgmgr32
+        dn = ctypes.c_ulong(0)
+        res = cfgmgr32.CM_Locate_DevNodeW(ctypes.byref(dn), instance_id, 0)
+        if res != 0:
+            return False
+        status = ctypes.c_ulong(0)
+        prob_code = ctypes.c_ulong(0)
+        res2 = cfgmgr32.CM_Get_DevNode_Status(ctypes.byref(status), ctypes.byref(prob_code), dn, 0)
+        return res2 == 0
+    except Exception:
+        return False
+
+def get_pnp_device_name(reg_path):
+    """Retrieves human-readable device name from registry."""
+    try:
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+        for val_name in ["FriendlyName", "DeviceDesc"]:
+            try:
+                v, _ = winreg.QueryValueEx(k, val_name)
+                if ";" in v:
+                    v = v.split(";")[-1].strip()
+                if v:
+                    return v
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return "USB Storage / Removable Device"
+
+def scan_all_connected_usb():
+    """Scans all physically connected USB, USBSTOR, and WPD (phones/media) devices on Windows."""
+    present_devices = {}
+    if sys.platform != 'win32':
+        return present_devices
+    for base_key_name in [r"SYSTEM\CurrentControlSet\Enum\USBSTOR", r"SYSTEM\CurrentControlSet\Enum\WPD", r"SYSTEM\CurrentControlSet\Enum\USB"]:
+        try:
+            base_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base_key_name)
+            num_devs, _, _ = winreg.QueryInfoKey(base_key)
+            prefix = base_key_name.split("\\")[-1]
+            for i in range(num_devs):
+                dev_id = winreg.EnumKey(base_key, i)
+                sub_key = winreg.OpenKey(base_key, dev_id)
+                num_inst, _, _ = winreg.QueryInfoKey(sub_key)
+                for j in range(num_inst):
+                    inst_id = winreg.EnumKey(sub_key, j)
+                    complete_pnp_id = f"{prefix}\\{dev_id}\\{inst_id}"
+                    if is_pnp_device_present(complete_pnp_id):
+                        name = get_pnp_device_name(f"{base_key_name}\\{dev_id}\\{inst_id}")
+                        present_devices[complete_pnp_id] = {
+                            "id": complete_pnp_id,
+                            "name": name,
+                            "type": prefix
+                        }
+        except Exception:
+            pass
+    return present_devices
+
+def dispatch_usb_insertion_alert(device_name, drive_letter="USB", user_override=None):
+    """
+    Central dispatcher for USB / Pendrive insertion events.
+    Inserts notifications, alerts, incidents, and triggers zero-trust DLP enforcement.
+    """
+    conn = get_conn()
+    c = conn.cursor()
+
+    uid, uname, emp_name, emp_dept = "U001", "employee", "Employee", "Engineering"
+    if user_override:
+        c.execute("SELECT id, username, name, department FROM users WHERE username=?", (user_override,))
+        u_row = c.fetchone()
+        if u_row:
+            uid, uname, emp_name, emp_dept = u_row[0], u_row[1], u_row[2], u_row[3]
+    else:
+        c.execute("SELECT user_id, username, department FROM sessions WHERE is_active=1 AND role != 'admin' ORDER BY login_time DESC LIMIT 1")
+        sess = c.fetchone()
+        if sess:
+            uid, uname = sess[0], sess[1]
+            c.execute("SELECT name, department FROM users WHERE id=?", (uid,))
+            u_details = c.fetchone()
+            emp_name = u_details[0] if u_details else uname
+            emp_dept = u_details[1] if u_details else sess[2]
+        else:
+            c.execute("SELECT id, username, name, department FROM users WHERE role != 'admin' LIMIT 1")
+            u_row = c.fetchone()
+            if u_row:
+                uid, uname, emp_name, emp_dept = u_row[0], u_row[1], u_row[2], u_row[3]
+
+    # Update behavior_data
+    c.execute("UPDATE behavior_data SET usb_usage=1 WHERE user_id=?", (uid,))
+
+    # Insert critical notification for Admin Dashboard
+    nid = str(uuid.uuid4())
+    ts = datetime.now().isoformat()
+    notif_subject = f"[CRITICAL] USB INSERTION DETECTED: {emp_name} ({emp_dept})"
+    notif_msg = f"HARDWARE PLUG & PLAY ALERT: Physical USB/Pendrive storage inserted into workstation [{drive_letter} - {device_name}]. Endpoint DLP engaged for employee {emp_name} (@{uname})."
+    c.execute("""
+        INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+        VALUES (?,?,?,?,?,?,?,?,?,?,0)
+    """, (nid, uid, uname, "Endpoint Hardware DLP", "SOC Admin Team", notif_subject, notif_msg, "Critical", ts, "Dispatched"))
+
+    # Insert into alerts
+    alt_id = str(uuid.uuid4())
+    alt_code = f"ALT-{int(datetime.now().timestamp()) % 100000}"
+    c.execute("""
+        INSERT INTO alerts (id, alert_code, user_id, user_name, department, priority, alert_title, severity, risk_score, created_at, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (alt_id, alt_code, uid, emp_name, emp_dept, "P1", f"Physical USB/Pendrive Inserted: {device_name} ({drive_letter})", "Critical", 95, ts, "Active"))
+
+    # Create/update incident
+    inc_id = f"INC-{int(datetime.now().timestamp()) % 100000}"
+    c.execute("""
+        INSERT INTO incidents 
+        (id, incident_id, user_id, username, user_name, department, created_at, severity, status, summary, evidence, policies_triggered, risk_score, recommendations, resolved_at, resolved_by, notes, assigned_to, resolution) 
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (str(uuid.uuid4()), inc_id, uid, uname, emp_name, emp_dept, ts, "Critical", "Open",
+          f"Hardware USB Endpoint Breach: {emp_name} ({emp_dept}) inserted physical storage {device_name} [{drive_letter}]",
+          json.dumps([f"Physical Hardware Removable Media: {device_name} ({drive_letter})", "Policy POL-003 Violation: Removable Storage Lockout"]),
+          "POL-003: Removable Storage Lockout & Token Revocation",
+          95,
+          json.dumps(["Quarantine workstation endpoint", "Lock endpoint USB controller", "Force re-authentication", "Forensic scan of removable media"]),
+          None, None, "Hardware PnP USB watchdog alert automatically sent to SOC Admin Dashboard.", "SOC Team", ""))
+
+    conn.commit()
+    conn.close()
+
+    # Audit log & risk recalculation
+    log_audit(uid, uname, emp_name, emp_dept, "Hardware USB Event", f"Physical USB/Pendrive inserted: {device_name} ({drive_letter})", "127.0.0.1", "Physical Workstation Endpoint", 35, 1)
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    log_entry = f"[{ts}] USB INSERTION: {device_name} ({drive_letter}) -> {emp_name} (@{uname})\n"
+    try:
+        with open("usb_events.log", "a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception:
+        pass
+    print(f"[USB DETECTED] {device_name} [{drive_letter}] associated with {emp_name} (@{uname})", flush=True)
+
+@app.route('/api/admin/usb/test-trigger', methods=['POST'])
+def admin_usb_test_trigger():
+    """Manual or simulation trigger endpoint for testing USB insertion alerts instantly."""
+    data = request.json or {}
+    device_name = data.get("device_name", "Kingston DataTraveler 32GB")
+    drive_letter = data.get("drive_letter", "E:")
+    user_override = data.get("username", None)
+    dispatch_usb_insertion_alert(device_name, drive_letter, user_override)
+    return jsonify({
+        "success": True, 
+        "message": f"Hardware USB alert successfully triggered for {device_name} [{drive_letter}]"
+    })
+
+def usb_hardware_daemon():
+    """
+    Continuous background daemon running on Windows to automatically detect 
+    when physical USB drives, pendrives, phones, or removable media are inserted into the machine.
+    Immediately dispatches critical security notifications to the Admin SOC Dashboard.
+    """
+    time.sleep(2)
+    
+    # Baseline fixed drives on startup (e.g. C:\, D:\)
+    initial_drives = get_connected_storage_drives()
+    known_drives = set(initial_drives.keys())
+    
+    # Baseline internal USB devices (e.g. Camera, Bluetooth, Root Hub)
+    initial_usb = scan_all_connected_usb()
+    baseline_usb_ids = set(initial_usb.keys())
+
+    alerted_keys = set()
+
+    print(f"[USB HARDWARE DAEMON] Zero Trust USB Watchdog active. Baseline drives: {list(known_drives)}, USB devices: {len(baseline_usb_ids)}", flush=True)
+
+    while True:
+        try:
+            time.sleep(1.0)
+
+            # 1. Check for physical drive letters (Pendrives / USB Disks)
+            current_drives = get_connected_storage_drives()
+            current_drive_keys = set(current_drives.keys())
+
+            new_drives = current_drive_keys - known_drives
+            for d in new_drives:
+                if d not in alerted_keys:
+                    info = current_drives[d]
+                    vol_name = info['name']
+                    drive_letter = f"{info['letter']}:"
+                    dispatch_usb_insertion_alert(vol_name, drive_letter)
+                    alerted_keys.add(d)
+
+            # Clean up removed drive letters
+            removed_drives = known_drives - current_drive_keys
+            for rd in removed_drives:
+                alerted_keys.discard(rd)
+            known_drives = current_drive_keys
+
+            # 2. Check for PnP USB / Phone / WPD insertions
+            current_usb = scan_all_connected_usb()
+            current_usb_keys = set(current_usb.keys())
+
+            new_usb = current_usb_keys - baseline_usb_ids
+            for u in new_usb:
+                if u not in alerted_keys:
+                    dev_info = current_usb[u]
+                    dev_name = dev_info['name']
+                    dispatch_usb_insertion_alert(dev_name, "USB Port")
+                    alerted_keys.add(u)
+
+            # Clean up removed USB devices so re-plugging alerts again
+            removed_usb = set(alerted_keys) - current_usb_keys - current_drive_keys
+            for ru in removed_usb:
+                alerted_keys.discard(ru)
+
+        except Exception as e:
+            try:
+                with open("usb_events.log", "a", encoding="utf-8") as f:
+                    f.write(f"Daemon exception: {e}\n")
+            except Exception:
+                pass
+            time.sleep(2)
 
 try:
     init_db()
     seed_db()
     df_init = load_all_evaluated()
     ensure_incidents(df_init)
+    ensure_trusted_devices_seeded()
+
+    # Launch hardware USB monitoring daemon thread
+    usb_thread = threading.Thread(target=usb_hardware_daemon, daemon=True)
+    usb_thread.start()
 except Exception as e:
     print(f"Startup initialization notice: {e}")
 

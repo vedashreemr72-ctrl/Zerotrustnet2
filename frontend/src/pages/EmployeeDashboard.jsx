@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Clock, AlertTriangle, Activity, FileText, Upload, Download, Key, Cpu, ExternalLink, Lock, CheckCircle2 } from 'lucide-react';
+import { Shield, Clock, AlertTriangle, Activity, FileText, Upload, Download, Key, Cpu, ExternalLink, Lock, CheckCircle2, Archive, FolderArchive, FolderOpen, FileCheck, Eye, AlertCircle, Layers, MapPin, Navigation } from 'lucide-react';
+import { fetchRealTimeLocation } from '../utils/geolocation';
 
 export default function EmployeeDashboard({ token, user, onPageChange, onLogout }) {
   const [data, setData] = useState(null);
@@ -7,6 +8,26 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionAlert, setActionAlert] = useState({ type: '', msg: '' });
+
+  // Real-Time Physical Location State
+  const [realLocation, setRealLocation] = useState(null);
+  const [locLoading, setLocLoading] = useState(true);
+
+  const loadRealLocation = async () => {
+    setLocLoading(true);
+    try {
+      const loc = await fetchRealTimeLocation();
+      setRealLocation(loc);
+    } catch (err) {
+      console.warn('Failed to load real-time location:', err);
+    } finally {
+      setLocLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRealLocation();
+  }, []);
 
   // File Access & Step-Up MFA Modal State
   const [showFileModal, setShowFileModal] = useState(false);
@@ -38,6 +59,20 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
   const [confidentialFile, setConfidentialFile] = useState('Executive_Salary_Matrix_2026.xlsx');
   const [unlockPin, setUnlockPin] = useState('');
 
+  // USB / Pendrive Media States
+  const [usbDeviceType, setUsbDeviceType] = useState('USB Flash Drive / Pendrive');
+  const [usbPreset, setUsbPreset] = useState('SanDisk Ultra 64GB USB 3.1');
+  const [usbCustomName, setUsbCustomName] = useState('');
+  const [usbDriveLetter, setUsbDriveLetter] = useState('E: (Removable Disk)');
+  const [usbHardwareDetected, setUsbHardwareDetected] = useState(null);
+
+  // File Extraction States
+  const [autoExtractArchive, setAutoExtractArchive] = useState(false);
+  const [extractedDataView, setExtractedDataView] = useState(null);
+  const [selectedExtractArchiveFile, setSelectedExtractArchiveFile] = useState(null);
+  const [selectedExistingArchiveId, setSelectedExistingArchiveId] = useState('');
+  const [extractedArchivesList, setExtractedArchivesList] = useState([]);
+
   const handleRealFileUploadSubmit = async (e) => {
     e.preventDefault();
     if (!selectedUploadFile) {
@@ -52,6 +87,9 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
       const formData = new FormData();
       formData.append('file', selectedUploadFile);
       formData.append('classification', uploadClassification);
+      if (autoExtractArchive) {
+        formData.append('auto_extract', '1');
+      }
 
       const res = await fetch('/api/employee/upload-file', {
         method: 'POST',
@@ -70,8 +108,22 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
         setActionAlert({ type: 'success', msg: `✅ ${resData.message}` });
       }
 
+      if (resData.extracted_data) {
+        setExtractedDataView({
+          archive_name: resData.filename,
+          extract_id: resData.extracted_data.extract_id,
+          total_files: resData.extracted_data.total_files,
+          has_threats: resData.extracted_data.has_threats,
+          threat_details: resData.extracted_data.threat_details || [],
+          items: resData.extracted_data.items || []
+        });
+        setActiveModal('view_extracted');
+      } else {
+        setActiveModal(null);
+      }
+
       setSelectedUploadFile(null);
-      setActiveModal(null);
+      setAutoExtractArchive(false);
       fetchDashboardData();
     } catch (err) {
       setActionAlert({ type: 'error', msg: err.message });
@@ -80,11 +132,99 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
     }
   };
 
+  const handleExtractArchiveSubmit = async (fileToExtract = null, fileId = null, filename = null) => {
+    setActionLoading(true);
+    setActionAlert({ type: '', msg: '' });
+
+    try {
+      let res;
+      if (fileToExtract) {
+        const formData = new FormData();
+        formData.append('file', fileToExtract);
+        res = await fetch('/api/employee/extract-archive', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+      } else {
+        res = await fetch('/api/employee/extract-archive', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}` 
+          },
+          body: JSON.stringify({ file_id: fileId, filename: filename })
+        });
+      }
+
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Archive extraction failed');
+
+      if (resData.warning) {
+        setActionAlert({ type: 'warning', msg: resData.warning });
+      } else {
+        setActionAlert({ type: 'success', msg: `✅ ${resData.message}` });
+      }
+
+      setExtractedDataView({
+        archive_name: resData.archive_name,
+        extract_id: resData.extract_id,
+        total_files: resData.total_files,
+        has_threats: resData.has_threats,
+        threat_details: resData.threat_details || [],
+        items: resData.items || []
+      });
+      setActiveModal('view_extracted');
+      setSelectedExtractArchiveFile(null);
+      setSelectedExistingArchiveId('');
+      fetchDashboardData();
+    } catch (err) {
+      setActionAlert({ type: 'error', msg: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Listen for physical hardware USB insertion events via WebUSB API
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.usb) {
+      const handleUsbConnected = (event) => {
+        const dev = event.device;
+        const name = `${dev.productName || 'Removable USB Storage'} (Vendor: 0x${dev.vendorId ? dev.vendorId.toString(16) : 'unknown'})`;
+        setUsbHardwareDetected(name);
+        setUsbPreset('Custom');
+        setUsbCustomName(name);
+        setActiveModal('insert_usb');
+      };
+      navigator.usb.addEventListener('connect', handleUsbConnected);
+      return () => {
+        navigator.usb.removeEventListener('connect', handleUsbConnected);
+      };
+    }
+  }, []);
+
+  const handleScanPhysicalUsb = async () => {
+    if (typeof navigator === 'undefined' || !navigator.usb) {
+      alert("WebUSB API is not supported in this browser. Please use Chrome/Edge or select a device from the list.");
+      return;
+    }
+    try {
+      const device = await navigator.usb.requestDevice({ filters: [] });
+      const devName = `${device.productName || 'USB Storage Device'} (VendorID: 0x${device.vendorId.toString(16)}, ProductID: 0x${device.productId.toString(16)})`;
+      setUsbHardwareDetected(devName);
+      setUsbPreset('Custom');
+      setUsbCustomName(devName);
+    } catch (err) {
+      console.log("Hardware USB picker closed:", err);
+    }
+  };
+
   const fetchDashboardData = async () => {
     try {
-      const [dashRes, fileRes] = await Promise.all([
+      const [dashRes, fileRes, extractRes] = await Promise.all([
         fetch('/api/employee/dashboard', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/employee/file-access/history', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/employee/file-access/history', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/employee/extracted-archives', { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null)
       ]);
 
       if (dashRes.status === 401) {
@@ -94,6 +234,10 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
 
       const resData = await dashRes.json();
       const fileData = await fileRes.json();
+      if (extractRes && extractRes.ok) {
+        const extractList = await extractRes.json();
+        setExtractedArchivesList(extractList || []);
+      }
 
       if (!dashRes.ok) {
         if (resData.error === 'Invalid token' && onLogout) {
@@ -133,7 +277,7 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
       if (res.warning) {
         setActionAlert({ type: 'warning', msg: res.warning });
       } else {
-        setActionAlert({ type: 'success', msg: 'Action performed and logged successfully to immutable audit trail.' });
+        setActionAlert({ type: 'success', msg: res.message || 'Action performed and logged successfully to immutable audit trail.' });
       }
       
       fetchDashboardData();
@@ -428,8 +572,80 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
           </div>
           <div>
             <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>9. Location</div>
-            <div style={{ color: '#e2e8f0' }}>{user.location || 'Bengaluru, India'}</div>
+            <div style={{ color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <MapPin size={13} color="#00f5ff" />
+              <span>{locLoading ? 'Detecting live address...' : (realLocation?.shortLocation || realLocation?.address || user.location || 'Local Workstation')}</span>
+            </div>
           </div>
+        </div>
+
+        {/* Real-time System Physical Location & Verified Address Banner */}
+        <div style={{
+          marginTop: '0.85rem',
+          padding: '0.85rem 1rem',
+          background: 'linear-gradient(135deg, rgba(0, 245, 255, 0.05), rgba(16, 185, 129, 0.05))',
+          border: '1px solid rgba(0, 245, 255, 0.25)',
+          borderRadius: '8px',
+          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.84rem', color: '#00f5ff' }}>
+              <Navigation size={16} />
+              <span>System Real-Time Physical Location & Verified Address</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ 
+                fontSize: '0.7rem', 
+                color: '#10b981', 
+                background: 'rgba(16, 185, 129, 0.12)', 
+                padding: '3px 8px', 
+                borderRadius: '4px',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+                {realLocation?.source || 'Live Device Geolocation'}
+              </span>
+              <button 
+                type="button" 
+                onClick={loadRealLocation}
+                disabled={locLoading}
+                style={{
+                  background: 'rgba(0, 245, 255, 0.1)',
+                  border: '1px solid rgba(0, 245, 255, 0.3)',
+                  color: '#00f5ff',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer'
+                }}
+              >
+                {locLoading ? 'Detecting...' : '🔄 Refresh Live Location'}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '6px', fontSize: '0.82rem', color: '#f8fafc', lineHeight: '1.4', background: 'rgba(0, 0, 0, 0.25)', padding: '8px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <strong style={{ color: '#00f5ff' }}>Real-Time Physical Address:</strong>{' '}
+            {locLoading ? (
+              <span style={{ color: '#94a3b8' }}>Detecting precise address from client device...</span>
+            ) : (
+              <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{realLocation?.address || 'Unable to retrieve precise street address'}</span>
+            )}
+          </div>
+
+          {realLocation && realLocation.latitude && (
+            <div style={{ display: 'flex', gap: '15px', marginTop: '6px', fontSize: '0.73rem', color: '#94a3b8', flexWrap: 'wrap' }}>
+              <div>• <strong>Coordinates:</strong> <span style={{ color: '#00f5ff', fontFamily: 'monospace' }}>{realLocation.latitude}° N, {realLocation.longitude}° E</span></div>
+              {realLocation.accuracy && <div>• <strong>GPS Accuracy:</strong> <span style={{ color: '#10b981' }}>±{realLocation.accuracy}</span></div>}
+              {realLocation.ip && <div>• <strong>Public IP:</strong> <span style={{ color: '#f472b6', fontFamily: 'monospace' }}>{realLocation.ip}</span></div>}
+              {realLocation.isp && <div>• <strong>Network ISP:</strong> <span style={{ color: '#cbd5e1' }}>{realLocation.isp}</span></div>}
+              {realLocation.postal && <div>• <strong>Postal Code:</strong> <span style={{ color: '#fbbf24' }}>{realLocation.postal}</span></div>}
+            </div>
+          )}
         </div>
 
         {/* Step 2: Device Verification Evaluation */}
@@ -476,6 +692,95 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
             </div>
           );
         })()}
+      </div>
+
+      {/* Adaptive MFA & Endpoint Trust Standing Card */}
+      <div className="zt-card" style={{
+        marginBottom: '1.2rem',
+        padding: '1rem 1.25rem',
+        background: 'rgba(15, 23, 42, 0.75)',
+        border: '1px solid rgba(0, 245, 255, 0.25)',
+        borderRadius: '12px'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem' }}>
+          <div style={{ color: '#00f5ff', fontWeight: 'bold', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Key size={18} /> Adaptive MFA & Trusted Device Standing
+          </div>
+          <span style={{ fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', padding: '2px 8px', borderRadius: '12px', border: '1px solid #10b981' }}>
+            MFA Status: Enrolled & Active
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginBottom: '1rem' }}>
+          <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.7rem 0.85rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' }}>Authentication Policy</div>
+            <div style={{ fontSize: '0.8rem', color: '#e2e8f0', fontWeight: '600', marginTop: '3px' }}>Zero Trust Adaptive MFA</div>
+            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>OTP requested only on untrusted endpoints or abnormal behavior</div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.7rem 0.85rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' }}>Active Session MFA</div>
+            <div style={{ fontSize: '0.8rem', color: user.mfa_verified ? '#10b981' : '#38bdf8', fontWeight: '600', marginTop: '3px' }}>
+              {user.mfa_verified ? '✓ 2FA Verified' : 'Standard Session'}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>
+              {user.device_trusted ? 'Recognized baseline endpoint' : 'Provisional session verification'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.7rem 0.85rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' }}>Trusted Endpoints Registered</div>
+            <div style={{ fontSize: '0.8rem', color: '#00f5ff', fontWeight: '600', marginTop: '3px' }}>
+              {data && data.mfa_status ? `${data.mfa_status.trusted_devices_count} Trusted Device(s)` : '1 Trusted Device'}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>Endpoints pre-cleared for direct access</div>
+          </div>
+        </div>
+
+        {/* Recent Personal Login Activity Table */}
+        {data && data.recent_logins && data.recent_logins.length > 0 && (
+          <div style={{ marginTop: '0.5rem' }}>
+            <div style={{ fontSize: '0.76rem', color: '#cbd5e1', fontWeight: 'bold', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={14} color="#00f5ff" /> My Recent Login Activity (Strictly Isolated to You)
+            </div>
+            <div className="zt-table-container">
+              <table className="zt-table" style={{ fontSize: '0.74rem' }}>
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Device ID</th>
+                    <th>Operating System</th>
+                    <th>Browser</th>
+                    <th>Location & IP</th>
+                    <th>MFA Status</th>
+                    <th>Session Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.recent_logins.map((lg, i) => (
+                    <tr key={i}>
+                      <td style={{ fontFamily: 'monospace', color: '#fbbf24' }}>
+                        {lg.login_time ? lg.login_time.replace('T', ' ').substring(0, 16) : '—'}
+                      </td>
+                      <td style={{ fontFamily: 'monospace', color: '#a7f3d0' }}>{lg.device_id || 'DEV-55357-WIN'}</td>
+                      <td>{lg.os || 'Windows 11'}</td>
+                      <td>{lg.browser || 'Google Chrome 127'}</td>
+                      <td>{lg.location || 'Bengaluru, India'} ({lg.ip_addr})</td>
+                      <td>
+                        <span className={`zt-badge ${lg.mfa_verified ? 'bl' : 'bm'}`} style={{ fontSize: '0.68rem' }}>
+                          {lg.mfa_verified ? '✓ MFA Verified' : 'Standard'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`zt-badge ${lg.is_active ? 'bl' : 'bc'}`} style={{ fontSize: '0.68rem' }}>
+                          {lg.is_active ? 'Active' : 'Closed'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Explainable AI (XAI) Transparency Card */}
@@ -615,6 +920,9 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
               <button className="zt-btn" onClick={() => setActiveModal('upload_doc')} disabled={actionLoading}>
                 <Upload size={15} /> 📤 Upload Document
               </button>
+              <button className="zt-btn" onClick={() => setActiveModal('extract_archive')} disabled={actionLoading} style={{ borderLeft: '3px solid #10b981' }}>
+                <Archive size={15} color="#10b981" /> 📦 Extract Archive Files
+              </button>
               <button className="zt-btn" onClick={() => setActiveModal('open_confidential')} disabled={actionLoading} style={{ borderLeft: '3px solid #f59e0b' }}>
                 <Lock size={15} /> 🔐 Open Confidential File
               </button>
@@ -638,9 +946,6 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
               </button>
               <button className="zt-btn" onClick={() => setActiveModal('use_ai')} disabled={actionLoading} style={{ borderLeft: '3px solid #00f5ff' }}>
                 <Cpu size={15} /> 🤖 Use GenAI Tool
-              </button>
-              <button className="zt-btn" onClick={() => setActiveModal('insert_usb')} disabled={actionLoading} style={{ borderLeft: '3px solid #ec4899' }}>
-                <ExternalLink size={15} /> 🔌 Connect USB Device
               </button>
               <button className="zt-btn" onClick={() => setActiveModal('access_payroll')} disabled={actionLoading}>
                 <FileText size={15} /> 💼 Access Payroll System
@@ -775,26 +1080,83 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
                       <th>Classification</th>
                       <th>Operation</th>
                       <th>Policy Decision</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {fileLogs.length === 0 ? (
                       <tr>
-                        <td colSpan={4} style={{ color: '#4a6275', textAlign: 'center' }}>No file operations logged yet. Use File Access Monitor to test.</td>
+                        <td colSpan={5} style={{ color: '#4a6275', textAlign: 'center' }}>No file operations logged yet. Use File Access Monitor to test.</td>
                       </tr>
                     ) : (
-                      fileLogs.map((f, idx) => (
-                        <tr key={idx}>
-                          <td style={{ fontWeight: 'bold', fontSize: '0.82rem' }}>{f.filename}</td>
-                          <td>
-                            <span className={`zt-badge ${f.classification === 'Secret' || f.classification === 'Restricted' ? 'bc' : f.classification === 'Confidential' ? 'bm' : 'bl'}`}>
-                              {f.classification}
-                            </span>
-                          </td>
-                          <td>{f.operation}</td>
-                          <td style={{ fontSize: '0.78rem', color: f.is_flagged ? '#ef4444' : '#22c55e' }}>{f.policy_action}</td>
-                        </tr>
-                      ))
+                      fileLogs.map((f, idx) => {
+                        const isArchive = f.filename.toLowerCase().match(/\.(zip|tar|gz|tgz)$/i) || f.operation === 'Extract Archive';
+                        return (
+                          <tr key={idx}>
+                            <td style={{ fontWeight: 'bold', fontSize: '0.82rem' }}>
+                              {isArchive ? '📦 ' : '📄 '}
+                              {f.filename}
+                            </td>
+                            <td>
+                              <span className={`zt-badge ${f.classification === 'Secret' || f.classification === 'Restricted' ? 'bc' : f.classification === 'Confidential' ? 'bm' : 'bl'}`}>
+                                {f.classification}
+                              </span>
+                            </td>
+                            <td>{f.operation}</td>
+                            <td style={{ fontSize: '0.78rem', color: f.is_flagged ? '#ef4444' : '#22c55e' }}>{f.policy_action}</td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                {isArchive && f.operation !== 'Extract Archive' && (
+                                  <button 
+                                    className="zt-btn" 
+                                    style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#10b981', color: '#000', fontWeight: 'bold' }}
+                                    onClick={() => handleExtractArchiveSubmit(null, f.id, f.filename)}
+                                    title="Extract Archive Contents"
+                                    disabled={actionLoading}
+                                  >
+                                    ⚡ Extract
+                                  </button>
+                                )}
+                                {f.operation === 'Extract Archive' && (
+                                  <button 
+                                    className="zt-btn" 
+                                    style={{ padding: '3px 8px', fontSize: '0.72rem', background: 'rgba(0, 245, 255, 0.15)', color: '#00f5ff' }}
+                                    onClick={() => {
+                                      const match = extractedArchivesList.find(a => a.archive_name.includes(f.filename.replace('[Extracted] ', '')));
+                                      if (match) {
+                                        setExtractedDataView({
+                                          archive_name: match.archive_name,
+                                          extract_id: match.id,
+                                          total_files: match.total_files,
+                                          has_threats: match.has_threats,
+                                          threat_details: match.threat_details ? match.threat_details.split(', ') : [],
+                                          items: match.items
+                                        });
+                                        setActiveModal('view_extracted');
+                                      } else {
+                                        handleExtractArchiveSubmit(null, f.id, f.filename);
+                                      }
+                                    }}
+                                    title="View Extracted Contents"
+                                  >
+                                    📂 View
+                                  </button>
+                                )}
+                                <a 
+                                  href={`/api/employee/download-file/${f.id}?token=${token}`}
+                                  className="zt-btn zt-btn-sec"
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', textDecoration: 'none' }}
+                                  title="Download File from Vault"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  ⬇️
+                                </a>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -902,13 +1264,207 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
                 </select>
               </div>
 
+              {selectedUploadFile && selectedUploadFile.name.match(/\.(zip|tar|gz|tgz)$/i) && (
+                <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.9rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#10b981', fontSize: '0.82rem', fontWeight: 600 }}>
+                    <input 
+                      type="checkbox" 
+                      checked={autoExtractArchive} 
+                      onChange={(e) => setAutoExtractArchive(e.target.checked)} 
+                    />
+                    <span>⚡ Automatically extract archive contents upon upload</span>
+                  </label>
+                  <div style={{ fontSize: '0.72rem', color: '#8aafc8', marginTop: '3px' }}>
+                    Zero Trust DLP sandbox will inspect all archive members for malicious executables and Zip Slip attacks.
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.2rem' }}>
                 <button type="submit" className="zt-btn full-width" disabled={actionLoading}>
-                  {actionLoading ? 'Uploading File...' : '📤 Upload File & Log Audit Event'}
+                  {actionLoading ? 'Processing...' : '📤 Upload File & Log Audit Event'}
                 </button>
                 <button type="button" className="zt-btn zt-btn-sec" onClick={() => setActiveModal(null)}>Cancel</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2.5: Extract Archive Files */}
+      {activeModal === 'extract_archive' && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="zt-card" style={{ maxWidth: '520px', width: '92%', padding: '1.6rem', border: '1px solid #10b981' }}>
+            <div className="zt-section-title" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981' }}>
+              <Archive size={22} color="#10b981" /> 📦 Extract & Inspect Archive Files
+            </div>
+            <p style={{ fontSize: '0.82rem', color: '#8aafc8', marginBottom: '1.1rem', lineHeight: '1.45' }}>
+              Unpack `.zip` or `.tar` archives in the Zero Trust sandbox. Every extracted file is screened for path-traversal vulnerabilities (Zip Slip), hidden executables, and classified according to data sensitivity.
+            </p>
+
+            {/* Option 1: Select new archive from disk */}
+            <div style={{ marginBottom: '1.2rem', padding: '0.9rem', background: 'rgba(2, 6, 23, 0.6)', border: '1px solid rgba(0, 245, 255, 0.15)', borderRadius: '8px' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#00f5ff', display: 'block', marginBottom: '6px' }}>
+                Option 1: Upload & Extract New Archive (.zip, .tar, .tar.gz)
+              </label>
+              <input 
+                type="file" 
+                className="zt-input" 
+                accept=".zip,.tar,.gz,.tgz"
+                onChange={(e) => {
+                  setSelectedExtractArchiveFile(e.target.files[0] || null);
+                  setSelectedExistingArchiveId('');
+                }}
+                style={{ padding: '0.45rem', cursor: 'pointer' }}
+              />
+              {selectedExtractArchiveFile && (
+                <div style={{ fontSize: '0.75rem', color: '#10b981', marginTop: '4px', fontWeight: 'bold' }}>
+                  📦 Selected for Extraction: {selectedExtractArchiveFile.name} ({(selectedExtractArchiveFile.size / 1024).toFixed(1)} KB)
+                </div>
+              )}
+            </div>
+
+            {/* Option 2: Extract existing archive from vault */}
+            {(() => {
+              const uploadedArchives = fileLogs.filter(f => f.filename.toLowerCase().match(/\.(zip|tar|gz|tgz)$/i) && f.operation !== 'Extract Archive');
+              return (
+                <div style={{ marginBottom: '1.2rem', padding: '0.9rem', background: 'rgba(2, 6, 23, 0.6)', border: '1px solid rgba(0, 245, 255, 0.15)', borderRadius: '8px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#00f5ff', display: 'block', marginBottom: '6px' }}>
+                    Option 2: Extract Previously Uploaded Archive ({uploadedArchives.length} available)
+                  </label>
+                  {uploadedArchives.length > 0 ? (
+                    <select 
+                      className="zt-select"
+                      value={selectedExistingArchiveId}
+                      onChange={(e) => {
+                        setSelectedExistingArchiveId(e.target.value);
+                        setSelectedExtractArchiveFile(null);
+                      }}
+                    >
+                      <option value="">-- Choose Archive from Vault --</option>
+                      {uploadedArchives.map((a, i) => (
+                        <option key={i} value={a.id}>{a.filename} ({a.classification} · {a.file_size_mb} MB)</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                      No archives in vault yet. Choose Option 1 above to upload an archive.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.2rem' }}>
+              <button 
+                type="button" 
+                className="zt-btn full-width"
+                style={{ background: '#10b981', color: '#000', fontWeight: 'bold' }}
+                disabled={actionLoading || (!selectedExtractArchiveFile && !selectedExistingArchiveId)}
+                onClick={() => {
+                  if (selectedExtractArchiveFile) {
+                    handleExtractArchiveSubmit(selectedExtractArchiveFile);
+                  } else if (selectedExistingArchiveId) {
+                    handleExtractArchiveSubmit(null, selectedExistingArchiveId);
+                  }
+                }}
+              >
+                {actionLoading ? 'Unpacking & Scanning...' : '⚡ Extract Archive Now'}
+              </button>
+              <button type="button" className="zt-btn zt-btn-sec" onClick={() => setActiveModal(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2.6: Extracted Files Vault Viewer */}
+      {activeModal === 'view_extracted' && extractedDataView && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(6px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="zt-card" style={{ maxWidth: '640px', width: '94%', maxHeight: '88vh', overflowY: 'auto', padding: '1.8rem', border: extractedDataView.has_threats ? '2px solid #ef4444' : '1px solid #10b981' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+              <div className="zt-section-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: extractedDataView.has_threats ? '#ef4444' : '#10b981' }}>
+                <FolderArchive size={22} /> 📂 Extracted Archive Vault
+              </div>
+              <button className="zt-btn zt-btn-sec" style={{ padding: '3px 10px', fontSize: '0.75rem' }} onClick={() => setActiveModal(null)}>✕ Close</button>
+            </div>
+
+            <div style={{ fontSize: '0.84rem', color: '#c8d6e8', marginBottom: '1rem', background: 'rgba(0, 245, 255, 0.05)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(0, 245, 255, 0.15)' }}>
+              <div>📦 <strong>Archive Source:</strong> {extractedDataView.archive_name}</div>
+              <div style={{ marginTop: '4px' }}>📊 <strong>Total Files Unpacked:</strong> {extractedDataView.total_files} files</div>
+            </div>
+
+            {/* Zero Trust Threat Screening Alert Banner */}
+            {extractedDataView.has_threats ? (
+              <div style={{ padding: '10px 14px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', borderRadius: '8px', color: '#fca5a5', marginBottom: '1.2rem', fontSize: '0.82rem', lineHeight: '1.45' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#ef4444' }}>
+                  <AlertCircle size={16} /> ⚠️ MALICIOUS FILE PATTERNS DETECTED IN ARCHIVE
+                </div>
+                <div style={{ marginTop: '4px' }}>
+                  Suspicious executables or credential artifacts flagged: <strong>{extractedDataView.threat_details.join(', ')}</strong>.
+                  This extraction event has been flagged and logged to the SOC Threat Center.
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '10px 14px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid #10b981', borderRadius: '8px', color: '#a7f3d0', marginBottom: '1.2rem', fontSize: '0.82rem', lineHeight: '1.45' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#10b981' }}>
+                  <CheckCircle2 size={16} /> ✅ ZERO TRUST SECURITY SCAN PASSED
+                </div>
+                <div style={{ marginTop: '3px' }}>
+                  All {extractedDataView.total_files} extracted files screened for Zip Slip attacks, malicious scripts, and unauthorized executables. Files are safe for inspection and download.
+                </div>
+              </div>
+            )}
+
+            {/* Extracted Files Table */}
+            <div style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '1.2rem' }}>
+              <table className="zt-table">
+                <thead>
+                  <tr>
+                    <th>Extracted File</th>
+                    <th>Size</th>
+                    <th>Scan Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {extractedDataView.items.map((item, idx) => (
+                    <tr key={idx} style={{ background: item.is_dangerous ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
+                      <td style={{ fontWeight: '500', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {item.is_dangerous ? '⚠️' : '📄'} {item.rel_path}
+                      </td>
+                      <td style={{ fontSize: '0.78rem' }}>{item.size_kb} KB</td>
+                      <td>
+                        <span className={`zt-badge ${item.is_dangerous ? 'bc' : 'bl'}`} style={{ fontSize: '0.7rem' }}>
+                          {item.threat_tag}
+                        </span>
+                      </td>
+                      <td>
+                        <a 
+                          href={`/api/employee/download-extracted/${extractedDataView.extract_id}/${item.rel_path}?token=${token}`}
+                          className="zt-btn"
+                          style={{ padding: '3px 8px', fontSize: '0.72rem', textDecoration: 'none', background: item.is_dangerous ? '#ef4444' : 'var(--accent-cyan)', color: '#000', fontWeight: 'bold' }}
+                          download
+                        >
+                          ⬇️ Download
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+              <button 
+                type="button" 
+                className="zt-btn" 
+                style={{ background: '#10b981', color: '#000', fontWeight: 'bold' }}
+                onClick={() => setActiveModal('extract_archive')}
+              >
+                Extract Another Archive
+              </button>
+              <button type="button" className="zt-btn zt-btn-sec" onClick={() => setActiveModal(null)}>Done</button>
+            </div>
           </div>
         </div>
       )}
@@ -1130,31 +1686,6 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
                 {actionLoading ? 'Sending...' : 'Send Prompt'}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 11: Connect USB Device */}
-      {activeModal === 'insert_usb' && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div className="zt-card" style={{ maxWidth: '460px', width: '90%', padding: '1.5rem', border: '1px solid #ec4899' }}>
-            <div className="zt-section-title" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', color: '#f472b6' }}>
-              <ExternalLink size={20} /> 🔌 USB Endpoint Media Control
-            </div>
-            <div style={{ background: 'rgba(15,23,42,0.8)', padding: '0.85rem', borderRadius: '8px', fontSize: '0.78rem', marginBottom: '1rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div><strong>Detected Volume:</strong> SanDisk Ultra 64GB USB 3.1</div>
-              <div><strong>Mount Status:</strong> Connected (Unencrypted Media)</div>
-              <div style={{ color: '#ef4444', marginTop: '4px' }}>⚠️ Unapproved USB mass storage is restricted under DLP policies.</div>
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="zt-btn full-width" style={{ background: '#ec4899', color: '#fff', fontWeight: 'bold' }} onClick={() => {
-                handleQuickAction('insert_usb', { details: 'Unregistered USB device connected and mounted (SanDisk Ultra 64GB)' });
-                setActiveModal(null);
-              }} disabled={actionLoading}>
-                🔌 Mount USB & Log Endpoint Risk
-              </button>
-              <button className="zt-btn zt-btn-sec" onClick={() => setActiveModal(null)}>Cancel</button>
-            </div>
           </div>
         </div>
       )}

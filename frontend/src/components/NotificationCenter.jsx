@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, BellRing, Volume2, VolumeX, CheckCheck, Trash2, X, AlertTriangle, ShieldAlert, Activity, Clock, ShieldCheck, Check } from 'lucide-react';
 
-export default function NotificationCenter({ token }) {
+export default function NotificationCenter({ token, theme: propTheme }) {
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState('all'); // 'all', 'critical', 'unread'
@@ -9,6 +9,34 @@ export default function NotificationCenter({ token }) {
     return localStorage.getItem('ztn_sound_enabled') !== 'false';
   });
   const [toasts, setToasts] = useState([]);
+
+  // Theme synchronization (responsive to prop, data-theme attribute on root, and localStorage)
+  const [currentTheme, setCurrentTheme] = useState(() => {
+    return propTheme || document.documentElement.getAttribute('data-theme') || localStorage.getItem('ztn_theme') || 'dark';
+  });
+
+  useEffect(() => {
+    if (propTheme) {
+      setCurrentTheme(propTheme);
+    }
+  }, [propTheme]);
+
+  useEffect(() => {
+    const updateTheme = () => {
+      const active = document.documentElement.getAttribute('data-theme') || localStorage.getItem('ztn_theme') || 'dark';
+      setCurrentTheme(active);
+    };
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    window.addEventListener('storage', updateTheme);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('storage', updateTheme);
+    };
+  }, []);
+
+  const isLight = currentTheme === 'light';
 
   const knownIdsRef = useRef(new Set());
   const initialLoadDoneRef = useRef(false);
@@ -67,6 +95,26 @@ export default function NotificationCenter({ token }) {
     if (next) playCyberChime('Low');
   };
 
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx && !audioCtxRef.current) {
+          audioCtxRef.current = new AudioCtx();
+        }
+        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+          audioCtxRef.current.resume();
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
+
   const fetchNotifications = async () => {
     if (!token) return;
     try {
@@ -96,6 +144,25 @@ export default function NotificationCenter({ token }) {
           }));
 
           setToasts(prev => [...newToasts, ...prev].slice(0, 5));
+        }
+      } else {
+        // On initial page load: if there is an unread Critical USB alert, pop up toast immediately
+        const recentUsb = data.filter(n => 
+          !n.is_read && 
+          n.severity === 'Critical' && 
+          ((n.subject && n.subject.toUpperCase().includes('USB')) || (n.message && n.message.toUpperCase().includes('USB')))
+        );
+        if (recentUsb.length > 0) {
+          const initToasts = recentUsb.slice(0, 1).map(n => ({
+            id: n.id,
+            subject: n.subject,
+            message: n.message,
+            severity: 'Critical',
+            username: n.username,
+            sent_at: n.sent_at,
+            timestamp: Date.now()
+          }));
+          setToasts(initToasts);
         }
       }
 
@@ -166,7 +233,20 @@ export default function NotificationCenter({ token }) {
     return true;
   });
 
-  const getSeverityStyle = (sev) => {
+  const getSeverityStyle = (sev, isLightTheme = isLight) => {
+    if (isLightTheme) {
+      switch (sev) {
+        case 'Critical':
+          return { color: '#dc2626', bg: 'rgba(254, 226, 226, 0.85)', border: '#fca5a5', icon: '🔴' };
+        case 'High':
+          return { color: '#ea580c', bg: 'rgba(255, 237, 213, 0.85)', border: '#fdba74', icon: '🟠' };
+        case 'Medium':
+          return { color: '#d97706', bg: 'rgba(254, 243, 199, 0.85)', border: '#fcd34d', icon: '🟡' };
+        default:
+          return { color: '#0284c7', bg: 'rgba(224, 242, 254, 0.85)', border: '#7dd3fc', icon: '🟢' };
+      }
+    }
+
     switch (sev) {
       case 'Critical':
         return { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.4)', icon: '🔴' };
@@ -179,18 +259,88 @@ export default function NotificationCenter({ token }) {
     }
   };
 
+  const parseDate = (ts) => {
+    if (!ts) return new Date();
+    if (ts instanceof Date) return ts;
+    if (typeof ts === 'number') return new Date(ts);
+
+    let str = String(ts).trim();
+    // Render/Flask backend outputs UTC timestamps. If string lacks timezone ('Z' or offset like +05:30 or -04:00),
+    // append 'Z' so client parses it as UTC and correctly shows user's real local time.
+    if (str.includes('T') && !str.endsWith('Z') && !/[+-]\d{2}(:\d{2})?$/.test(str)) {
+      str += 'Z';
+    }
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const formatRealClockTime = (ts) => {
+    try {
+      const d = parseDate(ts);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    } catch {
+      return '';
+    }
+  };
+
   const formatTime = (ts) => {
     if (!ts) return 'Just now';
     try {
-      const d = new Date(ts);
-      const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
-      if (diffSec < 10) return 'Just now';
-      if (diffSec < 60) return `${diffSec}s ago`;
-      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-      return ts.replace('T', ' ').substring(0, 16);
+      const d = parseDate(ts);
+      const now = Date.now();
+      const diffSec = Math.floor((now - d.getTime()) / 1000);
+      const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+      // If created within the last 15 seconds (or slight server/client clock drift)
+      if (diffSec < 15 && diffSec >= -30) {
+        return `Just now (${timeStr})`;
+      }
+      if (diffSec < 60 && diffSec >= 15) {
+        return `${diffSec}s ago • ${timeStr}`;
+      }
+      if (diffSec < 3600 && diffSec >= 60) {
+        const mins = Math.floor(diffSec / 60);
+        return `${mins}m ago • ${timeStr}`;
+      }
+
+      // Check if it's today
+      const isToday = d.toDateString() === new Date().toDateString();
+      if (isToday) {
+        const hours = Math.floor(diffSec / 3600);
+        return hours <= 6 ? `${hours}h ago • ${timeStr}` : `Today, ${timeStr}`;
+      }
+
+      // Check if it's yesterday
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (d.toDateString() === yesterday.toDateString()) {
+        return `Yesterday, ${timeStr}`;
+      }
+
+      // Otherwise, show formatted month, day and time
+      const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      return `${dateStr}, ${timeStr}`;
     } catch {
-      return ts;
+      return String(ts);
+    }
+  };
+
+  const formatToastTime = (ts) => {
+    if (!ts) return 'Just now';
+    try {
+      const d = parseDate(ts);
+      const now = Date.now();
+      const diffSec = Math.floor((now - d.getTime()) / 1000);
+      const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      if (diffSec < 20 && diffSec >= -30) {
+        return `Just now • ${timeStr}`;
+      }
+      if (diffSec < 60) {
+        return `${diffSec}s ago • ${timeStr}`;
+      }
+      return timeStr;
+    } catch {
+      return 'Just now';
     }
   };
 
@@ -202,25 +352,31 @@ export default function NotificationCenter({ token }) {
           onClick={() => setIsOpen(prev => !prev)}
           title="Real-Time Security Activity & Notifications"
           style={{
-            background: isOpen ? 'rgba(0, 245, 255, 0.2)' : 'rgba(15, 23, 42, 0.85)',
-            border: `1px solid ${unreadCount > 0 ? 'rgba(0, 245, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+            background: isOpen
+              ? (isLight ? 'rgba(2, 132, 199, 0.14)' : 'rgba(0, 245, 255, 0.2)')
+              : (isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.85)'),
+            border: `1px solid ${unreadCount > 0
+              ? (isLight ? '#0284c7' : 'rgba(0, 245, 255, 0.5)')
+              : (isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.12)')}`,
             borderRadius: '8px',
             padding: '7px 12px',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
             cursor: 'pointer',
-            color: '#f1f5f9',
+            color: isLight ? '#0f172a' : '#f1f5f9',
             fontSize: '0.82rem',
             fontWeight: 600,
             transition: 'all 0.2s ease',
-            boxShadow: unreadCount > 0 ? '0 0 12px rgba(0, 245, 255, 0.25)' : 'none'
+            boxShadow: unreadCount > 0
+              ? (isLight ? '0 0 10px rgba(2, 132, 199, 0.2)' : '0 0 12px rgba(0, 245, 255, 0.25)')
+              : (isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none')
           }}
         >
           {unreadCount > 0 ? (
-            <BellRing size={17} color="#00f5ff" style={{ animation: 'bounce 2s infinite' }} />
+            <BellRing size={17} color={isLight ? '#0284c7' : '#00f5ff'} style={{ animation: 'bounce 2s infinite' }} />
           ) : (
-            <Bell size={17} color="#94a3b8" />
+            <Bell size={17} color={isLight ? '#64748b' : '#94a3b8'} />
           )}
 
           <span style={{ fontSize: '0.78rem' }}>Activities</span>
@@ -258,10 +414,12 @@ export default function NotificationCenter({ token }) {
             width: '420px',
             maxWidth: '90vw',
             maxHeight: '620px',
-            background: 'linear-gradient(180deg, #09132b 0%, #030818 100%)',
-            border: '1px solid rgba(0, 245, 255, 0.35)',
+            background: isLight ? '#ffffff' : 'linear-gradient(180deg, #09132b 0%, #030818 100%)',
+            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(0, 245, 255, 0.35)',
             borderRadius: '12px',
-            boxShadow: '0 15px 45px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 245, 255, 0.15)',
+            boxShadow: isLight
+              ? '0 20px 45px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05)'
+              : '0 15px 45px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 245, 255, 0.15)',
             zIndex: 9999,
             display: 'flex',
             flexDirection: 'column',
@@ -270,24 +428,24 @@ export default function NotificationCenter({ token }) {
             {/* Header */}
             <div style={{
               padding: '0.85rem 1rem',
-              borderBottom: '1px solid rgba(0, 245, 255, 0.12)',
+              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(0, 245, 255, 0.12)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              background: 'rgba(15, 23, 42, 0.6)'
+              background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.6)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Activity size={18} color="#00f5ff" />
-                <span style={{ fontWeight: 700, fontSize: '0.92rem', color: '#f1f5f9' }}>
+                <Activity size={18} color={isLight ? '#0284c7' : '#00f5ff'} />
+                <span style={{ fontWeight: 700, fontSize: '0.92rem', color: isLight ? '#0f172a' : '#f1f5f9' }}>
                   Enterprise Activity Stream
                 </span>
                 <span style={{
                   fontSize: '0.65rem',
-                  color: '#10b981',
-                  background: 'rgba(16, 185, 129, 0.12)',
+                  color: isLight ? '#166534' : '#10b981',
+                  background: isLight ? '#dcfce7' : 'rgba(16, 185, 129, 0.12)',
                   padding: '2px 6px',
                   borderRadius: '10px',
-                  border: '1px solid rgba(16, 185, 129, 0.3)'
+                  border: isLight ? '1px solid #86efac' : '1px solid rgba(16, 185, 129, 0.3)'
                 }}>
                   LIVE
                 </span>
@@ -300,7 +458,7 @@ export default function NotificationCenter({ token }) {
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    color: soundEnabled ? '#00f5ff' : '#64748b',
+                    color: soundEnabled ? (isLight ? '#0284c7' : '#00f5ff') : (isLight ? '#94a3b8' : '#64748b'),
                     cursor: 'pointer',
                     padding: '4px',
                     borderRadius: '4px'
@@ -313,7 +471,7 @@ export default function NotificationCenter({ token }) {
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    color: '#94a3b8',
+                    color: isLight ? '#64748b' : '#94a3b8',
                     cursor: 'pointer',
                     padding: '4px'
                   }}
@@ -326,7 +484,8 @@ export default function NotificationCenter({ token }) {
             {/* Filter Tabs & Quick Actions */}
             <div style={{
               padding: '0.5rem 1rem',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.06)',
+              background: isLight ? '#f8fafc' : 'transparent',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -336,8 +495,12 @@ export default function NotificationCenter({ token }) {
                 <button
                   onClick={() => setFilter('all')}
                   style={{
-                    background: filter === 'all' ? 'rgba(0, 245, 255, 0.18)' : 'transparent',
-                    color: filter === 'all' ? '#00f5ff' : '#94a3b8',
+                    background: filter === 'all'
+                      ? (isLight ? 'rgba(2, 132, 199, 0.14)' : 'rgba(0, 245, 255, 0.18)')
+                      : 'transparent',
+                    color: filter === 'all'
+                      ? (isLight ? '#0284c7' : '#00f5ff')
+                      : (isLight ? '#64748b' : '#94a3b8'),
                     border: 'none',
                     borderRadius: '4px',
                     padding: '3px 8px',
@@ -350,8 +513,12 @@ export default function NotificationCenter({ token }) {
                 <button
                   onClick={() => setFilter('critical')}
                   style={{
-                    background: filter === 'critical' ? 'rgba(239, 68, 68, 0.18)' : 'transparent',
-                    color: filter === 'critical' ? '#ef4444' : '#94a3b8',
+                    background: filter === 'critical'
+                      ? (isLight ? '#fee2e2' : 'rgba(239, 68, 68, 0.18)')
+                      : 'transparent',
+                    color: filter === 'critical'
+                      ? (isLight ? '#dc2626' : '#ef4444')
+                      : (isLight ? '#64748b' : '#94a3b8'),
                     border: 'none',
                     borderRadius: '4px',
                     padding: '3px 8px',
@@ -364,8 +531,12 @@ export default function NotificationCenter({ token }) {
                 <button
                   onClick={() => setFilter('unread')}
                   style={{
-                    background: filter === 'unread' ? 'rgba(234, 179, 8, 0.18)' : 'transparent',
-                    color: filter === 'unread' ? '#eab308' : '#94a3b8',
+                    background: filter === 'unread'
+                      ? (isLight ? '#fef3c7' : 'rgba(234, 179, 8, 0.18)')
+                      : 'transparent',
+                    color: filter === 'unread'
+                      ? (isLight ? '#d97706' : '#eab308')
+                      : (isLight ? '#64748b' : '#94a3b8'),
                     border: 'none',
                     borderRadius: '4px',
                     padding: '3px 8px',
@@ -384,7 +555,7 @@ export default function NotificationCenter({ token }) {
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    color: '#38bdf8',
+                    color: isLight ? '#0284c7' : '#38bdf8',
                     cursor: 'pointer',
                     fontSize: '0.72rem',
                     display: 'flex',
@@ -400,7 +571,7 @@ export default function NotificationCenter({ token }) {
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    color: '#64748b',
+                    color: isLight ? '#94a3b8' : '#64748b',
                     cursor: 'pointer',
                     padding: '2px'
                   }}
@@ -417,26 +588,30 @@ export default function NotificationCenter({ token }) {
               padding: '0.5rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.45rem'
+              gap: '0.45rem',
+              background: isLight ? '#ffffff' : 'transparent'
             }}>
               {filteredNotifications.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#64748b', fontSize: '0.8rem' }}>
+                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: isLight ? '#64748b' : '#64748b', fontSize: '0.8rem' }}>
                   No notifications match filter criteria.
                 </div>
               ) : (
                 filteredNotifications.map((n) => {
-                  const style = getSeverityStyle(n.severity);
+                  const style = getSeverityStyle(n.severity, isLight);
                   return (
                     <div
                       key={n.id}
                       onClick={() => !n.is_read && markAsRead(n.id)}
                       style={{
-                        background: n.is_read ? 'rgba(15, 23, 42, 0.45)' : 'rgba(15, 23, 42, 0.85)',
+                        background: n.is_read
+                          ? (isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.45)')
+                          : (isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.85)'),
                         borderLeft: `3px solid ${style.color}`,
-                        borderTop: '1px solid rgba(255, 255, 255, 0.04)',
-                        borderRight: '1px solid rgba(255, 255, 255, 0.04)',
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                        borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.04)',
+                        borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.04)',
+                        borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.04)',
                         borderRadius: '6px',
+                        boxShadow: isLight && !n.is_read ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
                         padding: '0.65rem 0.75rem',
                         cursor: 'pointer',
                         transition: 'all 0.15s ease'
@@ -447,27 +622,32 @@ export default function NotificationCenter({ token }) {
                           <span style={{ fontSize: '0.85rem' }}>{style.icon}</span>
                           <span style={{
                             fontWeight: n.is_read ? 600 : 700,
-                            color: n.is_read ? '#cbd5e1' : '#ffffff',
+                            color: n.is_read
+                              ? (isLight ? '#64748b' : '#cbd5e1')
+                              : (isLight ? '#0f172a' : '#ffffff'),
                             fontSize: '0.82rem'
                           }}>
                             {n.subject || 'Security Event'}
                           </span>
                         </div>
-                        <span style={{ fontSize: '0.66rem', color: '#64748b', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        <span 
+                          title={formatRealClockTime(n.sent_at)} 
+                          style={{ fontSize: '0.66rem', color: isLight ? '#64748b' : '#64748b', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '3px' }}
+                        >
                           <Clock size={11} /> {formatTime(n.sent_at)}
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.74rem', color: '#94a3b8', lineHeight: '1.35', marginBottom: '4px' }}>
+                      <div style={{ fontSize: '0.74rem', color: isLight ? '#334155' : '#94a3b8', lineHeight: '1.35', marginBottom: '4px' }}>
                         {n.message}
                       </div>
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.66rem', color: '#64748b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.66rem', color: isLight ? '#64748b' : '#64748b' }}>
                         <span>
-                          Channel: <b style={{ color: '#38bdf8' }}>{n.channel || 'System'}</b>
+                          Channel: <b style={{ color: isLight ? '#0284c7' : '#38bdf8' }}>{n.channel || 'System'}</b>
                         </span>
                         {!n.is_read && (
-                          <span style={{ color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                          <span style={{ color: isLight ? '#16a34a' : '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
                             ● Unread
                           </span>
                         )}
@@ -481,10 +661,10 @@ export default function NotificationCenter({ token }) {
             {/* Footer */}
             <div style={{
               padding: '0.5rem 1rem',
-              borderTop: '1px solid rgba(0, 245, 255, 0.1)',
-              background: 'rgba(5, 10, 24, 0.8)',
+              borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(0, 245, 255, 0.1)',
+              background: isLight ? '#f8fafc' : 'rgba(5, 10, 24, 0.8)',
               fontSize: '0.68rem',
-              color: '#475569',
+              color: isLight ? '#64748b' : '#475569',
               textAlign: 'center'
             }}>
               ZeroTrustNet SIEM Event Dispatcher · Monitoring 11 Continuous Vectors
@@ -505,7 +685,7 @@ export default function NotificationCenter({ token }) {
         pointerEvents: 'none'
       }}>
         {toasts.map((toast) => {
-          const style = getSeverityStyle(toast.severity);
+          const style = getSeverityStyle(toast.severity, isLight);
           return (
             <div
               key={toast.id}
@@ -513,16 +693,22 @@ export default function NotificationCenter({ token }) {
                 pointerEvents: 'auto',
                 width: '360px',
                 maxWidth: '90vw',
-                background: 'linear-gradient(135deg, rgba(13, 27, 62, 0.95), rgba(3, 9, 30, 0.98))',
-                border: `1px solid ${style.border}`,
-                boxShadow: `0 8px 30px rgba(0,0,0,0.6), 0 0 15px ${style.border}`,
+                background: isLight
+                  ? '#ffffff'
+                  : 'linear-gradient(135deg, rgba(13, 27, 62, 0.95), rgba(3, 9, 30, 0.98))',
+                border: `1px solid ${isLight ? '#cbd5e1' : style.border}`,
+                borderLeft: `4px solid ${style.color}`,
+                boxShadow: isLight
+                  ? '0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04)'
+                  : `0 8px 30px rgba(0,0,0,0.6), 0 0 15px ${style.border}`,
                 borderRadius: '10px',
                 padding: '0.85rem 1rem',
-                color: '#f1f5f9',
+                color: isLight ? '#0f172a' : '#f1f5f9',
                 display: 'flex',
                 gap: '10px',
                 animation: 'slideInRight 0.3s ease-out',
-                position: 'relative'
+                position: 'relative',
+                transition: 'background 0.2s ease, color 0.2s ease, border-color 0.2s ease'
               }}
             >
               <div style={{ fontSize: '1.2rem', marginTop: '2px' }}>
@@ -531,34 +717,39 @@ export default function NotificationCenter({ token }) {
 
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.84rem', color: style.color }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.84rem', color: style.color, letterSpacing: '0.3px' }}>
                     {toast.severity.toUpperCase()} EVENT DETECTED
                   </span>
                   <button
                     onClick={() => dismissToast(toast.id)}
+                    title="Dismiss notification"
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      color: '#94a3b8',
+                      color: isLight ? '#64748b' : '#94a3b8',
                       cursor: 'pointer',
-                      padding: '2px'
+                      padding: '2px',
+                      display: 'flex',
+                      alignItems: 'center'
                     }}
                   >
                     <X size={14} />
                   </button>
                 </div>
 
-                <div style={{ fontWeight: 600, fontSize: '0.8rem', color: '#e2e8f0', marginBottom: '3px' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.82rem', color: isLight ? '#0f172a' : '#e2e8f0', marginBottom: '3px' }}>
                   {toast.subject}
                 </div>
 
-                <div style={{ fontSize: '0.73rem', color: '#94a3b8', lineHeight: '1.3' }}>
+                <div style={{ fontSize: '0.74rem', color: isLight ? '#334155' : '#94a3b8', lineHeight: '1.35' }}>
                   {toast.message}
                 </div>
 
-                <div style={{ marginTop: '5px', fontSize: '0.65rem', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>User: {toast.username}</span>
-                  <span>Just now</span>
+                <div style={{ marginTop: '6px', fontSize: '0.67rem', color: isLight ? '#64748b' : '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>User: <strong style={{ color: isLight ? '#1e293b' : '#cbd5e1' }}>{toast.username}</strong></span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <Clock size={10} /> {formatToastTime(toast.sent_at || toast.timestamp)}
+                  </span>
                 </div>
               </div>
             </div>
