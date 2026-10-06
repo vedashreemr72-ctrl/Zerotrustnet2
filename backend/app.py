@@ -1002,42 +1002,7 @@ def api_login():
         phone=user_sms_dest
     )
 
-    if mfa_eval["mfa_required"]:
-        # Record challenge in mfa_challenges
-        c_ins = conn.cursor()
-        c_ins.execute("""
-            INSERT INTO mfa_challenges (id, user_id, challenge_type, reason, status, created_at)
-            VALUES (?,?,?,?,?,?)
-        """, (mfa_eval["challenge_id"], uid, mfa_eval["challenge_type"], "; ".join(mfa_eval["reasons"]), "pending", datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
-
-        delivery_info = f"SMS: {mfa_eval.get('masked_phone')}" if mfa_eval.get("sms_sent") else "Simulated OTP Channel"
-        log_audit(
-            uid, real_uname, name, dept, "Adaptive MFA Triggered",
-            f"Adaptive MFA Challenge Triggered ({mfa_eval['challenge_type']}): {'; '.join(mfa_eval['reasons'])} | {delivery_info} | Device: {client_device_id} | Location: {client_location}",
-            client_ip, device_label, 10, 1
-        )
-
-        return jsonify({
-            "mfa_required": True,
-            "challenge_id": mfa_eval["challenge_id"],
-            "challenge_type": mfa_eval["challenge_type"],
-            "reasons": mfa_eval["reasons"],
-            "otp_demo": mfa_eval["otp_demo"],
-            "demo_code": mfa_eval["otp_demo"],
-            "username": real_uname,
-            "role": urole,
-            "device_id": client_device_id,
-            "device_trusted": False,
-            "delivery_method": mfa_eval.get("delivery_method", "demo_simulated"),
-            "sms_sent": mfa_eval.get("sms_sent", False),
-            "masked_phone": mfa_eval.get("masked_phone", ""),
-            "twilio_configured": mfa_eval.get("twilio_configured", False),
-            "message": mfa_eval.get("message", f"Adaptive MFA Triggered: {'; '.join(mfa_eval['reasons'])}")
-        })
-
-    # Device is recognized and trusted + behavior is normal -> Direct Login with Adaptive MFA passed!
+    # Direct login without OTP requirement
     device_known_val = 1 if (dev_check["is_registered"] and dev_check["is_normal_device"]) else 0
     update_user_session_telemetry(conn, uid, client_location, device_known=device_known_val)
 

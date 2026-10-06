@@ -53,11 +53,6 @@ export default function Login({
   const [regDevice, setRegDevice] = useState('Corporate Laptop');
   const [regPhone, setRegPhone] = useState('');
 
-  // Adaptive MFA Challenge State
-  const [mfaChallenge, setMfaChallenge] = useState(null);
-  const [otpCode, setOtpCode] = useState('');
-  const [trustDevice, setTrustDevice] = useState(true);
-
   // Simulation & telemetry toggles
   const [simLocation, setSimLocation] = useState(() => {
     try {
@@ -130,59 +125,7 @@ export default function Login({
         throw new Error(data.error || 'Authentication failed');
       }
 
-      // Check if Adaptive MFA is triggered
-      if (data.mfa_required) {
-        setMfaChallenge(data);
-        if (data.sms_sent) {
-          setOtpCode('');
-          setSuccessMsg(`📲 Real-time Verification Code sent to ${data.masked_phone || 'your phone'} via Twilio SMS!`);
-        } else {
-          setOtpCode(data.otp_demo || '');
-          setSuccessMsg(`🔐 Adaptive MFA Triggered: Please enter the 6-digit verification code.`);
-        }
-      } else {
-        // Direct login without OTP because device is trusted & normal behavior
-        onLoginSuccess(data.token, data.user);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMfaVerifySubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      const effectiveLoc = (simLocation && simLocation !== 'Detecting location...') 
-        ? simLocation 
-        : (localStorage.getItem('ztn_last_location') || 'Local Workstation');
-
-      const response = await fetch('/api/auth/mfa-verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challenge_id: mfaChallenge.challenge_id,
-          otp_code: otpCode,
-          trust_this_device: trustDevice,
-          device_info: {
-            device_id: simDeviceId,
-            device_name: `${osName} (${browserName})`,
-            browser: browserName,
-            os: osName,
-            location: effectiveLoc
-          }
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'MFA verification failed');
-      }
-
+      // Direct login without OTP
       onLoginSuccess(data.token, data.user);
     } catch (err) {
       setError(err.message);
@@ -237,7 +180,6 @@ export default function Login({
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setMode('login');
-    setMfaChallenge(null);
     setError('');
     setSuccessMsg('');
     if (tab === 'admin') {
@@ -316,27 +258,25 @@ export default function Login({
         </div>
 
         {/* Portal Role Tabs */}
-        {!mfaChallenge && (
-          <div className="tabs-header">
-            <button 
-              type="button" 
-              className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
-              onClick={() => handleTabChange('admin')}
-            >
-              🔐 Admin / SOC
-            </button>
-            <button 
-              type="button" 
-              className={`tab-btn ${activeTab === 'employee' ? 'active' : ''}`}
-              onClick={() => handleTabChange('employee')}
-            >
-              👤 Employee Portal
-            </button>
-          </div>
-        )}
+        <div className="tabs-header">
+          <button 
+            type="button" 
+            className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            onClick={() => handleTabChange('admin')}
+          >
+            🔐 Admin / SOC
+          </button>
+          <button 
+            type="button" 
+            className={`tab-btn ${activeTab === 'employee' ? 'active' : ''}`}
+            onClick={() => handleTabChange('employee')}
+          >
+            👤 Employee Portal
+          </button>
+        </div>
 
         {/* Register / Login Toggle for Employees */}
-        {activeTab === 'employee' && !mfaChallenge && (
+        {activeTab === 'employee' && (
           <div style={{
             display: 'flex',
             gap: '0.5rem',
@@ -395,95 +335,7 @@ export default function Login({
           </div>
         )}
 
-        {/* ADAPTIVE MFA CHALLENGE MODAL / VIEW */}
-        {mfaChallenge ? (
-          <form onSubmit={handleMfaVerifySubmit} style={{ marginTop: '0.5rem' }}>
-            <div style={{
-              background: 'rgba(245, 158, 11, 0.08)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              borderRadius: '8px',
-              padding: '0.85rem',
-              marginBottom: '1rem'
-            }}>
-              <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '0.86rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <AlertTriangle size={17} /> Adaptive Verification Required
-              </div>
-              <div style={{ fontSize: '0.76rem', color: '#cbd5e1', marginTop: '4px', lineHeight: '1.4' }}>
-                {mfaChallenge.reasons && mfaChallenge.reasons.map((r, i) => (
-                  <div key={i} style={{ marginTop: '3px' }}>• {r}</div>
-                ))}
-              </div>
-              {mfaChallenge.sms_sent ? (
-                <div style={{ 
-                  marginTop: '8px', 
-                  background: 'rgba(16, 185, 129, 0.12)', 
-                  border: '1px solid #10b981', 
-                  borderRadius: '6px', 
-                  padding: '8px 10px', 
-                  fontSize: '0.78rem' 
-                }}>
-                  <div style={{ color: '#10b981', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>📲</span> Live SMS Dispatched via Twilio
-                  </div>
-                  <div style={{ color: '#cbd5e1', fontSize: '0.74rem', marginTop: '3px' }}>
-                    A 6-digit verification code has been sent to <strong>{mfaChallenge.masked_phone || 'your mobile phone'}</strong>. Check your SMS inbox!
-                  </div>
-                  {mfaChallenge.otp_demo && (
-                    <details style={{ marginTop: '5px', fontSize: '0.68rem', color: '#64748b', cursor: 'pointer' }}>
-                      <summary>Fallback Backup Code (Testing/Demo)</summary>
-                      <div style={{ marginTop: '2px', color: '#38bdf8', fontFamily: 'monospace' }}>Code: {mfaChallenge.otp_demo}</div>
-                    </details>
-                  )}
-                </div>
-              ) : mfaChallenge.otp_demo ? (
-                <div style={{ marginTop: '8px', background: 'rgba(0,0,0,0.3)', padding: '5px 8px', borderRadius: '4px', fontSize: '0.75rem', color: '#00f5ff' }}>
-                  📲 <strong>Simulated SMS / Authenticator Code:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.9rem', color: '#22c55e' }}>{mfaChallenge.otp_demo}</span>
-                </div>
-              ) : null}
-
-            </div>
-
-            <div className="zt-input-group">
-              <label>Enter 6-Digit OTP Code</label>
-              <input 
-                type="text" 
-                className="zt-input" 
-                placeholder="e.g. 123456" 
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                maxLength={6}
-                required
-                style={{ fontSize: '1.2rem', letterSpacing: '4px', textAlign: 'center', fontWeight: 'bold' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '0.8rem 0', fontSize: '0.78rem', color: '#94a3b8' }}>
-              <input 
-                type="checkbox" 
-                id="trustDeviceCheck" 
-                checked={trustDevice} 
-                onChange={(e) => setTrustDevice(e.target.checked)} 
-                style={{ width: '16px', height: '16px', accentColor: '#00f5ff' }}
-              />
-              <label htmlFor="trustDeviceCheck" style={{ cursor: 'pointer' }}>
-                Trust this device for 30 days (No OTP requested when behavior is normal)
-              </label>
-            </div>
-
-            <button type="submit" className="zt-btn full-width" disabled={loading} style={{ background: 'linear-gradient(135deg, #0284c7, #06b6d4)' }}>
-              {loading ? 'Verifying OTP...' : '🔐 Verify OTP & Access Portal'}
-            </button>
-
-            <button 
-              type="button" 
-              className="zt-btn zt-btn-sec full-width" 
-              style={{ marginTop: '0.5rem', fontSize: '0.78rem' }}
-              onClick={() => { setMfaChallenge(null); setError(''); }}
-            >
-              ← Cancel & Back to Login
-            </button>
-          </form>
-        ) : mode === 'login' || activeTab === 'admin' ? (
+        {mode === 'login' || activeTab === 'admin' ? (
           /* STANDARD LOGIN FORM */
           <form onSubmit={handleLoginSubmit}>
             <div className="zt-input-group">
@@ -656,7 +508,7 @@ export default function Login({
                   setError('');
                 }}
               >
-                ✓ Trusted Endpoint
+                ✓ Corporate Device
               </button>
               <button 
                 type="button" 
@@ -667,7 +519,7 @@ export default function Login({
                   setError('');
                 }}
               >
-                ⚠️ Untrusted Device (Triggers MFA)
+                ⚠️ Untrusted Endpoint
               </button>
               <button 
                 type="button" 
@@ -678,7 +530,7 @@ export default function Login({
                   setError('');
                 }}
               >
-                🌐 Unusual Location (Triggers MFA)
+                🌍 Roaming Location
               </button>
             </div>
           </div>
