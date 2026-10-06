@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
+import { formatLocalTime, formatShortTime, formatLocalDateTime } from '../utils/timeFormat';
 
 export default function AdminDashboard({ token, user, onLogout }) {
   const [data, setData] = useState(null);
@@ -529,7 +530,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                       fontFamily: 'monospace'
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ color: '#00f5ff', fontWeight: 'bold' }}>{act.time}</span>
+                        <span style={{ color: '#00f5ff', fontWeight: 'bold' }}>{act.timestamp ? formatShortTime(act.timestamp) : formatShortTime(act.time)}</span>
                         <span style={{ color: '#e2e8f0', fontWeight: 'bold' }}>{act.user}</span>
                         <span style={{ color: isSusp ? '#f97316' : '#8aafc8' }}>{act.event_type}</span>
                       </div>
@@ -639,7 +640,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                         <div style={{ fontSize: '0.78rem', color: '#e2e8f0' }}>{sess.location || 'Bengaluru, IN'}</div>
                         <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#f472b6' }}>{sess.ip_addr}</div>
                       </td>
-                      <td style={{ fontSize: '0.75rem', color: '#fbbf24' }}>{sess.login_time ? sess.login_time.replace('T', ' ').substring(0, 16) : '09:00'}</td>
+                      <td style={{ fontSize: '0.75rem', color: '#fbbf24' }}>{formatLocalDateTime(sess.login_time)}</td>
                       <td>
                         <span className={`zt-badge ${sess.mfa_verified ? 'bl' : 'bm'}`} style={{ fontSize: '0.68rem' }}>
                           {sess.mfa_verified ? '✓ Step-Up Verified' : 'Standard Trust'}
@@ -936,7 +937,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                       return (
                         <tr key={idx}>
                           <td style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>
-                            {evt.timestamp ? evt.timestamp.replace('T', ' ').substring(0, 19) : '—'}
+                            {formatLocalDateTime(evt.timestamp)}
                           </td>
                           <td>
                             <div style={{ fontWeight: 'bold' }}>{evt.user_name || evt.username}</div>
@@ -1019,7 +1020,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                           </span>
                         </td>
                         <td style={{ fontSize: '0.75rem', color: '#fbbf24' }}>
-                          {td.last_seen_at ? td.last_seen_at.replace('T', ' ').substring(0, 16) : 'Recently'}
+                          {formatLocalDateTime(td.last_seen_at)}
                         </td>
                         <td>
                           {td.is_trusted ? (

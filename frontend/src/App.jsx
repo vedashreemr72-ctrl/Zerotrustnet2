@@ -14,6 +14,7 @@ import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import NotificationCenter from './components/NotificationCenter';
 import GlobalHeader from './components/GlobalHeader';
+import { formatLocalDateTime } from './utils/timeFormat';
 
 import { 
   LayoutDashboard, Users, AlertTriangle, ShieldAlert, Cpu, Zap, 
@@ -285,7 +286,7 @@ export default function App() {
                             {empData.recent_audit.map((log, idx) => (
                               <tr key={idx}>
                                 <td style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#4a6275' }}>
-                                  {log.timestamp.replace('T', ' ').substring(0, 16)}
+                                  {formatLocalDateTime(log.timestamp)}
                                 </td>
                                 <td style={{ fontWeight: '600', color: log.is_suspicious ? '#ef4444' : '#c8d6e8' }}>
                                   {log.event_type}

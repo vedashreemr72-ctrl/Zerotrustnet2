@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Filter, Download, Lock, CheckCircle, Shield } from 'lucide-react';
+import { formatLocalDateTime } from '../utils/timeFormat';
 
 export default function AuditLogs({ token }) {
   const [logs, setLogs] = useState([]);
@@ -191,7 +192,7 @@ export default function AuditLogs({ token }) {
               </thead>
               <tbody>
                 {logs.map((log, idx) => {
-                  const ts = log.timestamp ? log.timestamp.replace('T', ' ').substring(0, 19) : '—';
+                  const ts = formatLocalDateTime(log.timestamp);
                   return (
                     <tr key={idx}>
                       <td style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#4a6275' }}>{ts}</td>

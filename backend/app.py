@@ -416,7 +416,7 @@ DEFAULT_POLICIES = [
 
 def _log_event(conn, user_id, username, user_name, department, event_type, event_details, ip, device, risk_contrib, is_suspicious, ts_str=None, session_id=None):
     c = conn.cursor()
-    ts = ts_str or datetime.now(timezone.utc).isoformat()
+    ts = ts_str or datetime.now().astimezone().isoformat()
     c.execute("INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid.uuid4()), user_id, username, user_name, department,
                ts, event_type, event_details, ip, device, risk_contrib, is_suspicious, session_id or ""))
@@ -595,79 +595,113 @@ def load_all_evaluated():
         events = []
         uname = row['username']
         bd = row.to_dict()
-        hr = int(bd.get("login_time", 9))
+        hr = int(bd.get("login_time", datetime.now().hour))
         bl_t = bd.get("baseline_login_time", "09:00")
-        
-        if uname == 'ravi':
-            events = [
-                {"time": "09:15", "desc": "Baseline login expected (Office Laptop, Bengaluru)", "flagged": False},
-                {"time": "23:40", "desc": "ACTUAL LOGIN — 23:40 from unregistered device", "flagged": True},
-                {"time": "23:45", "desc": "Accessed Finance folder files (Privilege Misuse)", "flagged": True},
-                {"time": f"23:50", "desc": f"Mass download: {bd.get('downloads',0)} files", "flagged": True},
-                {"time": f"23:55", "desc": f"Uploaded {bd.get('genai_upload_mb',0)} MB to ChatGPT (IP Exfiltration)", "flagged": True}
-            ]
-        elif uname == 'rahul':
-            events = [
-                {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                {"time": "10:00", "desc": "Login (Office Desktop, Bengaluru)", "flagged": False},
-                {"time": "10:15", "desc": "Accessed Payroll Database — not in HR role scope", "flagged": True},
-                {"time": "10:30", "desc": "Accessed Finance Folder — privilege misuse", "flagged": True}
-            ]
-        elif uname == 'dormant_alice':
-            events = [
-                {"time": "02:00", "desc": f"Dormant account login attempt ({bd.get('last_login_days_ago',0)} days inactive)", "flagged": True},
-                {"time": "02:05", "desc": f"Failed logins: {bd.get('failed_logins',0)} attempts", "flagged": True},
-                {"time": "02:10", "desc": "Accessed Sales Folder (Dormant Account Misuse)", "flagged": True}
-            ]
-        elif uname == 'traveler_dan':
-            events = [
-                {"time": "09:00", "desc": "Login from Bengaluru (Office Laptop)", "flagged": False},
-                {"time": "09:12", "desc": "Login detected from London — new device, IP 85.90.12.3", "flagged": True},
-                {"time": "09:12", "desc": "⚠ IMPOSSIBLE TRAVEL: 10h journey in 12 minutes", "flagged": True}
-            ]
-        elif uname == 'shared_sam':
-            events = [
-                {"time": "14:00", "desc": "Login from Chrome/Windows — Mumbai IP 103.45.12.1", "flagged": False},
-                {"time": "14:02", "desc": "Concurrent login from Safari/macOS — Delhi IP 122.160.8.4", "flagged": True},
-                {"time": "14:02", "desc": "⚠ CREDENTIAL SHARING: simultaneous sessions from two locations", "flagged": True}
-            ]
-        elif uname == 'burnout_eve':
-            events = [
-                {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                {"time": "23:00", "desc": "Late-night login (burnout risk pattern)", "flagged": True},
-                {"time": "23:05", "desc": f"Failed logins: {bd.get('failed_logins',0)} attempts", "flagged": True},
-                {"time": "23:15", "desc": "Weekend data access pattern verified", "flagged": True}
-            ]
-        elif uname == 'shadow_it_ted':
-            events = [
-                {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                {"time": "11:00", "desc": "Login (Linux Workstation, Hyderabad)", "flagged": False},
-                {"time": "11:15", "desc": "Unauthorized software: AnyDesk — BLOCKED", "flagged": True},
-                {"time": "11:20", "desc": "Unauthorized software: TeamViewer — BLOCKED", "flagged": True},
-                {"time": "11:30", "desc": "Unknown VPN connection attempt — BLOCKED", "flagged": True}
-            ]
-        elif uname == 'ai_paste_pat':
-            events = [
-                {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                {"time": "10:00", "desc": "Login (Developer MacBook, Bengaluru)", "flagged": False},
-                {"time": "10:15", "desc": f"Pasted source code to ChatGPT ({bd.get('genai_upload_mb',0)} MB)", "flagged": True},
-                {"time": "10:30", "desc": "Sensitive IP exfiltrated via public AI tool", "flagged": True}
-            ]
-        elif uname == 'escalated_eric':
-            events = [
-                {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                {"time": "08:00", "desc": "Login (Helpdesk Terminal, Bengaluru)", "flagged": False},
-                {"time": "08:15", "desc": "⚠ PRIVILEGE ESCALATION: Employee → Admin role detected", "flagged": True},
-                {"time": "08:20", "desc": "Accessed Active Directory & Domain Controller Logs", "flagged": True}
-            ]
+
+        # Fetch actual audit events for this employee from DB if available
+        conn_ev = get_conn()
+        c_ev = conn_ev.cursor()
+        c_ev.execute("""
+            SELECT timestamp, event_type, event_details, is_suspicious
+            FROM audit_events WHERE user_id=? OR username=?
+            ORDER BY timestamp ASC
+        """, (row['id'], uname))
+        db_evs = c_ev.fetchall()
+        conn_ev.close()
+
+        if db_evs and len(db_evs) >= 2:
+            for ev_ts, ev_type, ev_det, ev_susp in db_evs[-8:]:
+                try:
+                    ev_dt = datetime.fromisoformat(ev_ts)
+                    if ev_dt.tzinfo is not None:
+                        t_str = ev_dt.astimezone().strftime("%H:%M")
+                    else:
+                        t_str = ev_dt.strftime("%H:%M")
+                except Exception:
+                    t_str = str(ev_ts)[11:16] if len(str(ev_ts)) >= 16 else datetime.now().strftime("%H:%M")
+                events.append({
+                    "time": t_str,
+                    "desc": f"{ev_type}: {ev_det}",
+                    "flagged": bool(ev_susp)
+                })
         else:
-            events = [{"time": f"{hr:02d}:00", "desc": f"Login from {bd.get('current_login_location','Office')}", "flagged": False}]
-            if bd.get('failed_logins', 0):
-                events.append({"time": f"{hr:02d}:05", "desc": f"Failed logins: {bd.get('failed_logins',0)}", "flagged": bd.get('failed_logins',0)>2})
-            if bd.get('file_access_count', 0) > 20:
-                events.append({"time": f"{hr:02d}:15", "desc": f"Accessed {bd.get('file_access_count',0)} files", "flagged": bd.get('file_access_count',0)>50})
-            if bd.get('downloads', 0) > 5:
-                events.append({"time": f"{hr:02d}:20", "desc": f"Downloaded {bd.get('downloads',0)} files", "flagged": bd.get('downloads',0)>20})
+            now_dt = datetime.now()
+            t_now = now_dt.strftime("%H:%M")
+            t_m5 = (now_dt - timedelta(minutes=5)).strftime("%H:%M")
+            t_m10 = (now_dt - timedelta(minutes=10)).strftime("%H:%M")
+            t_m15 = (now_dt - timedelta(minutes=15)).strftime("%H:%M")
+            t_m20 = (now_dt - timedelta(minutes=20)).strftime("%H:%M")
+
+            if uname == 'ravi':
+                events = [
+                    {"time": bl_t, "desc": "Baseline login expected (Office Laptop, Bengaluru)", "flagged": False},
+                    {"time": t_m20, "desc": f"ACTUAL LOGIN — {t_m20} from unregistered device", "flagged": True},
+                    {"time": t_m15, "desc": "Accessed Finance folder files (Privilege Misuse)", "flagged": True},
+                    {"time": t_m10, "desc": f"Mass download: {bd.get('downloads',0)} files", "flagged": True},
+                    {"time": t_m5,  "desc": f"Uploaded {bd.get('genai_upload_mb',0)} MB to ChatGPT (IP Exfiltration)", "flagged": True}
+                ]
+            elif uname == 'rahul':
+                events = [
+                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
+                    {"time": t_m20, "desc": "Login (Office Desktop, Bengaluru)", "flagged": False},
+                    {"time": t_m10, "desc": "Accessed Payroll Database — not in HR role scope", "flagged": True},
+                    {"time": t_m5,  "desc": "Accessed Finance Folder — privilege misuse", "flagged": True}
+                ]
+            elif uname == 'dormant_alice':
+                events = [
+                    {"time": t_m15, "desc": f"Dormant account login attempt ({bd.get('last_login_days_ago',0)} days inactive)", "flagged": True},
+                    {"time": t_m10, "desc": f"Failed logins: {bd.get('failed_logins',0)} attempts", "flagged": True},
+                    {"time": t_m5,  "desc": "Accessed Sales Folder (Dormant Account Misuse)", "flagged": True}
+                ]
+            elif uname == 'traveler_dan':
+                events = [
+                    {"time": t_m20, "desc": "Login from Bengaluru (Office Laptop)", "flagged": False},
+                    {"time": (now_dt - timedelta(minutes=8)).strftime("%H:%M"), "desc": "Login detected from London — new device, IP 85.90.12.3", "flagged": True},
+                    {"time": (now_dt - timedelta(minutes=8)).strftime("%H:%M"), "desc": "⚠ IMPOSSIBLE TRAVEL: 10h journey in 12 minutes", "flagged": True}
+                ]
+            elif uname == 'shared_sam':
+                events = [
+                    {"time": t_m15, "desc": "Login from Chrome/Windows — Mumbai IP 103.45.12.1", "flagged": False},
+                    {"time": t_m10, "desc": "Concurrent login from Safari/macOS — Delhi IP 122.160.8.4", "flagged": True},
+                    {"time": t_m10, "desc": "⚠ CREDENTIAL SHARING: simultaneous sessions from two locations", "flagged": True}
+                ]
+            elif uname == 'burnout_eve':
+                events = [
+                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
+                    {"time": t_m20, "desc": f"Off-hours login detected: {t_m20} (burnout risk pattern)", "flagged": True},
+                    {"time": t_m10, "desc": f"Failed logins: {bd.get('failed_logins',0)} attempts", "flagged": True},
+                    {"time": t_m5,  "desc": "Weekend data access pattern verified", "flagged": True}
+                ]
+            elif uname == 'shadow_it_ted':
+                events = [
+                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
+                    {"time": t_m20, "desc": "Login (Linux Workstation, Hyderabad)", "flagged": False},
+                    {"time": t_m15, "desc": "Unauthorized software: AnyDesk — BLOCKED", "flagged": True},
+                    {"time": t_m10, "desc": "Unauthorized software: TeamViewer — BLOCKED", "flagged": True},
+                    {"time": t_m5,  "desc": "Unknown VPN connection attempt — BLOCKED", "flagged": True}
+                ]
+            elif uname == 'ai_paste_pat':
+                events = [
+                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
+                    {"time": t_m20, "desc": "Login (Developer MacBook, Bengaluru)", "flagged": False},
+                    {"time": t_m10, "desc": f"Pasted source code to ChatGPT ({bd.get('genai_upload_mb',0)} MB)", "flagged": True},
+                    {"time": t_m5,  "desc": "Sensitive IP exfiltrated via public AI tool", "flagged": True}
+                ]
+            elif uname == 'escalated_eric':
+                events = [
+                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
+                    {"time": t_m20, "desc": "Login (Helpdesk Terminal, Bengaluru)", "flagged": False},
+                    {"time": t_m10, "desc": "⚠ PRIVILEGE ESCALATION: Employee → Admin role detected", "flagged": True},
+                    {"time": t_m5,  "desc": "Accessed Active Directory & Domain Controller Logs", "flagged": True}
+                ]
+            else:
+                events = [{"time": t_m20, "desc": f"Login from {bd.get('current_login_location','Office')}", "flagged": False}]
+                if bd.get('failed_logins', 0):
+                    events.append({"time": t_m15, "desc": f"Failed logins: {bd.get('failed_logins',0)}", "flagged": bd.get('failed_logins',0)>2})
+                if bd.get('file_access_count', 0) > 20:
+                    events.append({"time": t_m10, "desc": f"Accessed {bd.get('file_access_count',0)} files", "flagged": bd.get('file_access_count',0)>50})
+                if bd.get('downloads', 0) > 5:
+                    events.append({"time": t_m5, "desc": f"Downloaded {bd.get('downloads',0)} files", "flagged": bd.get('downloads',0)>20})
 
         exfil = min(99, max(5,
             (35 if row.get('usb_usage',0) else 0) +
@@ -799,23 +833,26 @@ def update_user_session_telemetry(conn, uid, client_location, device_known=None)
         row = c.fetchone()
         prev_loc = row[0] if (row and row[0]) else "Office"
         
+        curr_hour = datetime.now().hour
         if device_known is not None:
             conn.execute("""
                 UPDATE behavior_data 
                 SET last_login_location = CASE WHEN current_login_location IS NOT NULL AND current_login_location != '' THEN current_login_location ELSE ? END,
                     current_login_location = ?,
                     last_login_days_ago = 0,
-                    device_known = ?
+                    device_known = ?,
+                    login_time = ?
                 WHERE user_id = ?
-            """, (prev_loc, client_location, device_known, uid))
+            """, (prev_loc, client_location, device_known, curr_hour, uid))
         else:
             conn.execute("""
                 UPDATE behavior_data 
                 SET last_login_location = CASE WHEN current_login_location IS NOT NULL AND current_login_location != '' THEN current_login_location ELSE ? END,
                     current_login_location = ?,
-                    last_login_days_ago = 0
+                    last_login_days_ago = 0,
+                    login_time = ?
                 WHERE user_id = ?
-            """, (prev_loc, client_location, uid))
+            """, (prev_loc, client_location, curr_hour, uid))
         conn.commit()
         invalidate_eval_cache()
     except Exception as e:
@@ -2784,20 +2821,23 @@ def admin_sim_attack():
                    "192.168.1.45", "Corporate Macbook Pro", 45, 1)
 
     elif vector in ["travel", "impossible_travel"]:
-        c.execute("UPDATE behavior_data SET impossible_travel_flag=1, impossible_travel_details='Office (09:00) → Moscow IP (09:08). Travel time: 10 Hours.', device_known=0, current_login_location='Russia', mitre_techniques=?, mitre_confidence=97 WHERE user_id=?",
-                     ("T1133 (External Remote Services)", uid))
+        now_dt = datetime.now()
+        t1 = (now_dt - timedelta(minutes=8)).strftime("%H:%M")
+        t2 = now_dt.strftime("%H:%M")
+        c.execute("UPDATE behavior_data SET impossible_travel_flag=1, impossible_travel_details=?, device_known=0, current_login_location='Russia', mitre_techniques=?, mitre_confidence=97 WHERE user_id=?",
+                     (f"Office ({t1}) → Moscow IP ({t2}). Travel time: 10 Hours.", "T1133 (External Remote Services)", uid))
         vector_meta = {
             "key": "travel",
             "name": "Impossible Travel Anomaly",
-            "threat_summary": "Concurrent active sessions detected: Bengaluru Office IP (09:00 AM) and Moscow, Russia IP (09:08 AM) — 10 hours travel in 8 mins",
+            "threat_summary": f"Concurrent active sessions detected: Bengaluru Office IP ({t1}) and Moscow, Russia IP ({t2}) — 10 hours travel in 8 mins",
             "policy": "POL-005: Impossible Geo-Velocity Zero Trust Gate",
             "defense": "All active user session tokens globally invalidated; Russian IP address blacklisted; mandatory password + hardware MFA reset.",
             "mitre": "T1133 (External Remote Services)",
             "impact": "₹18,00,000",
-            "changes": {"Geo-Velocity": "Bengaluru (09:00) → Moscow (09:08)", "Distance Traveled": "5,000+ km in 8 minutes", "Device": "Untrusted Windows 11 Desktop"}
+            "changes": {"Geo-Velocity": f"Bengaluru ({t1}) → Moscow ({t2})", "Distance Traveled": "5,000+ km in 8 minutes", "Device": "Untrusted Windows 11 Desktop"}
         }
         _log_event(conn, uid, emp_row.iloc[0]['username'], target_emp_name, emp_row.iloc[0]['department'],
-                   "Impossible Travel", "Concurrent logins from Bengaluru Office (09:00) and Moscow Russia IP (09:08). Geo-velocity violation",
+                   "Impossible Travel", f"Concurrent logins from Bengaluru Office ({t1}) and Moscow Russia IP ({t2}). Geo-velocity violation",
                    "185.220.101.5", "Unknown Windows Desktop", 48, 1)
     
     conn.commit()
@@ -2952,12 +2992,17 @@ def admin_live_activity():
     for r in rows:
         ts, uname, etype, edet, is_susp, rc = r
         try:
-            time_str = datetime.fromisoformat(ts).strftime("%H:%M")
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is not None:
+                time_str = dt.astimezone().strftime("%H:%M")
+            else:
+                time_str = dt.strftime("%H:%M")
         except Exception:
-            time_str = ts[:5] if len(str(ts)) >= 5 else "09:00"
+            time_str = datetime.now().strftime("%H:%M")
 
         siem_stream.append({
             "time": time_str,
+            "timestamp": ts,
             "user": uname or "System",
             "event_type": etype,
             "details": edet,
@@ -2967,13 +3012,22 @@ def admin_live_activity():
 
     # Default fallback simulated SIEM stream if database events are minimal
     if len(siem_stream) < 6:
+        now_dt = datetime.now()
+        fallback_templates = [
+            (9, "Ravi", "Login", "Successful SSO Authentication", False, 0),
+            (7, "Ravi", "Payroll Access", "Accessed Payroll System", True, 20),
+            (5, "Ravi", "Download Report", "Downloaded Q2_Performance_Report.pdf", False, 0),
+            (3, "Ravi", "New Device", "Access attempt from unregistered hardware fingerprint", True, 15),
+            (2, "System", "Risk Increased", "Unified UEBA Risk Score updated to 65/100", True, 25),
+            (1, "SOC Engine", "Alert Generated", "P1 Critical Alert — Automated Lockout Challenge Issued", True, 35)
+        ]
         siem_stream = [
-            {"time": "09:00", "user": "Ravi", "event_type": "Login", "details": "Successful SSO Authentication", "is_suspicious": False, "risk_contrib": 0},
-            {"time": "09:02", "user": "Ravi", "event_type": "Payroll Access", "details": "Accessed Payroll System", "is_suspicious": True, "risk_contrib": 20},
-            {"time": "09:04", "user": "Ravi", "event_type": "Download Report", "details": "Downloaded Q2_Performance_Report.pdf", "is_suspicious": False, "risk_contrib": 0},
-            {"time": "09:06", "user": "Ravi", "event_type": "New Device", "details": "Access attempt from unregistered hardware fingerprint", "is_suspicious": True, "risk_contrib": 15},
-            {"time": "09:08", "user": "System", "event_type": "Risk Increased", "details": "Unified UEBA Risk Score updated to 65/100", "is_suspicious": True, "risk_contrib": 25},
-            {"time": "09:09", "user": "SOC Engine", "event_type": "Alert Generated", "details": "P1 Critical Alert — Automated Lockout Challenge Issued", "is_suspicious": True, "risk_contrib": 35}
+            {
+                "time": (now_dt - timedelta(minutes=m)).strftime("%H:%M"),
+                "timestamp": (now_dt - timedelta(minutes=m)).astimezone().isoformat(),
+                "user": u, "event_type": et, "details": det, "is_suspicious": susp, "risk_contrib": rc
+            }
+            for m, u, et, det, susp, rc in fallback_templates
         ]
 
     return jsonify(siem_stream)

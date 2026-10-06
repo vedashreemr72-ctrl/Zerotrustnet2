@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle, Shield, Archive, MessageSquare, Search, Zap, Check, Lock, UserCheck } from 'lucide-react';
+import { formatLocalDateTime } from '../utils/timeFormat';
 
 export default function IncidentResponse({ token }) {
   const [incidents, setIncidents] = useState([]);
@@ -155,7 +156,7 @@ export default function IncidentResponse({ token }) {
                   <div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.5rem', fontSize: '0.8rem', marginBottom: '0.85rem', background: 'rgba(15, 23, 42, 0.6)', padding: '0.75rem', borderRadius: '6px' }}>
                       <div><span style={{ color: '#64748b' }}>Triage Risk Score:</span> <b style={{ color: color }}>{inc.risk_score}/100</b></div>
-                      <div><span style={{ color: '#64748b' }}>Incident Triggered:</span> <span style={{ color: '#e2e8f0' }}>{inc.created_at.replace('T', ' ').substring(0, 16)}</span></div>
+                      <div><span style={{ color: '#64748b' }}>Incident Triggered:</span> <span style={{ color: '#e2e8f0' }}>{formatLocalDateTime(inc.created_at)}</span></div>
                       <div><span style={{ color: '#64748b' }}>Assigned To:</span> <b style={{ color: '#00f5ff' }}>{inc.assigned_to || 'SOC Analyst L2'}</b></div>
                       <div><span style={{ color: '#64748b' }}>Resolved By:</span> <span style={{ color: '#a855f7' }}>{inc.resolved_by || 'Pending'}</span></div>
                       <div style={{ gridColumn: 'span 2' }}>

@@ -4,6 +4,7 @@ import {
   Clock, Activity, Globe, CheckCircle2, AlertTriangle, RefreshCw, 
   Download, ArrowLeft, Eye, EyeOff, Check, X, FileText, SmartphoneCharging
 } from 'lucide-react';
+import { formatLocalDateTime, formatLocalTime } from '../utils/timeFormat';
 
 export default function Profile({ token, user, onBack }) {
   const [profileData, setProfileData] = useState(null);
@@ -434,7 +435,7 @@ export default function Profile({ token, user, onBack }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(0, 245, 255, 0.08)', fontSize: '0.82rem' }}>
               <span style={{ color: '#8aafc8' }}>Session Start Time</span>
-              <strong style={{ color: '#f1f5f9' }}>{sess.login_time ? new Date(sess.login_time).toLocaleTimeString() : 'Current'}</strong>
+              <strong style={{ color: '#f1f5f9' }}>{formatLocalTime(sess.login_time)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid rgba(0, 245, 255, 0.08)', fontSize: '0.82rem' }}>
               <span style={{ color: '#8aafc8' }}>Continuous Validation</span>
@@ -504,7 +505,7 @@ export default function Profile({ token, user, onBack }) {
                 {events.map((ev, idx) => (
                   <tr key={idx}>
                     <td style={{ fontFamily: 'monospace', fontSize: '0.74rem', color: '#8aafc8', whiteSpace: 'nowrap' }}>
-                      {ev.timestamp ? ev.timestamp.replace('T', ' ').substring(0, 19) : 'Just now'}
+                      {formatLocalDateTime(ev.timestamp)}
                     </td>
                     <td style={{ fontWeight: 600, color: '#f1f5f9' }}>
                       {ev.event_type}

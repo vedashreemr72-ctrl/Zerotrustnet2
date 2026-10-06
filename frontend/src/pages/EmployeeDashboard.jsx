@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Clock, AlertTriangle, Activity, FileText, Upload, Download, Key, Cpu, ExternalLink, Lock, CheckCircle2, Archive, FolderArchive, FolderOpen, FileCheck, Eye, AlertCircle, Layers, MapPin, Navigation } from 'lucide-react';
 import { fetchRealTimeLocation } from '../utils/geolocation';
+import { formatLocalTime, formatShortTime, formatLocalDateTime, getRelativeRealTime } from '../utils/timeFormat';
 
 export default function EmployeeDashboard({ token, user, onPageChange, onLogout }) {
   const [data, setData] = useState(null);
@@ -564,7 +565,7 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
           </div>
           <div>
             <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>7. Login Time</div>
-            <div style={{ color: '#fbbf24', fontSize: '0.74rem' }}>{user.login_time ? new Date(user.login_time).toLocaleTimeString() : '09:00:00 AM'}</div>
+            <div style={{ color: '#fbbf24', fontSize: '0.74rem' }}>{formatLocalTime(user.login_time)}</div>
           </div>
           <div>
             <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>8. IP Address</div>
@@ -758,7 +759,7 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
                   {data.recent_logins.map((lg, i) => (
                     <tr key={i}>
                       <td style={{ fontFamily: 'monospace', color: '#fbbf24' }}>
-                        {lg.login_time ? lg.login_time.replace('T', ' ').substring(0, 16) : '—'}
+                        {formatLocalDateTime(lg.login_time)}
                       </td>
                       <td style={{ fontFamily: 'monospace', color: '#a7f3d0' }}>{lg.device_id || 'DEV-55357-WIN'}</td>
                       <td>{lg.os || 'Windows 11'}</td>
@@ -811,7 +812,7 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
                 const reasonsList = reasons && reasons.length > 0 && !reasons[0].includes('No unusual behavior')
                   ? reasons.map(r => `✓ ${r.replace(/^[✓\s•◦-]+/, '').trim()}`)
                   : [
-                      `✓ Login at ${user.login_time ? new Date(user.login_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '2:30 AM'}`,
+                      `✓ Login at ${formatShortTime(user.login_time)}`,
                       '✓ Downloaded 120 Files',
                       '✓ New Device',
                       '✓ Isolation Forest Anomaly',
@@ -999,8 +1000,8 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
 
                     let flowEvents = [];
                     if (recent_audit && recent_audit.length > 0) {
-                      flowEvents = recent_audit.slice().reverse().map(e => ({
-                        time: e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00 AM',
+                      flowEvents = recent_audit.slice().reverse().map((e, idx) => ({
+                        time: formatShortTime(e.timestamp, idx * 2),
                         event_type: e.event_type,
                         details: e.details,
                         is_suspicious: e.is_suspicious,
@@ -1008,12 +1009,12 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
                       }));
                     } else {
                       flowEvents = [
-                        { time: '09:00 AM', event_type: 'Login', details: 'SSO Authentication Verified', is_suspicious: false, risk: 0 },
-                        { time: '09:02 AM', event_type: 'Payroll Access', details: 'Accessed Payroll System — Salary Ledger', is_suspicious: true, risk: 20 },
-                        { time: '09:03 AM', event_type: 'Finance Folder', details: 'Accessed Restricted Finance Ledger Files', is_suspicious: true, risk: 20 },
-                        { time: '09:04 AM', event_type: 'Download Report', details: 'Downloaded Q2_Performance_Report.pdf (2.4 MB)', is_suspicious: false, risk: 0 },
-                        { time: '09:06 AM', event_type: 'USB Storage Connected', details: 'Unapproved USB Mass Storage Device Mounted', is_suspicious: true, risk: 20 },
-                        { time: '09:10 AM', event_type: 'Logout', details: 'Session Closed / Revoked by Security Policy', is_suspicious: false, risk: 0 }
+                        { time: getRelativeRealTime(15), event_type: 'Login', details: 'SSO Authentication Verified', is_suspicious: false, risk: 0 },
+                        { time: getRelativeRealTime(12), event_type: 'Payroll Access', details: 'Accessed Payroll System — Salary Ledger', is_suspicious: true, risk: 20 },
+                        { time: getRelativeRealTime(9), event_type: 'Finance Folder', details: 'Accessed Restricted Finance Ledger Files', is_suspicious: true, risk: 20 },
+                        { time: getRelativeRealTime(6), event_type: 'Download Report', details: 'Downloaded Q2_Performance_Report.pdf (2.4 MB)', is_suspicious: false, risk: 0 },
+                        { time: getRelativeRealTime(3), event_type: 'USB Storage Connected', details: 'Unapproved USB Mass Storage Device Mounted', is_suspicious: true, risk: 20 },
+                        { time: getRelativeRealTime(1), event_type: 'Active Session', details: 'Continuous Zero Trust Telemetry Heartbeat Verified', is_suspicious: false, risk: 0 }
                       ];
                     }
 
