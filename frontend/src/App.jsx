@@ -19,7 +19,7 @@ import { formatLocalDateTime } from './utils/timeFormat';
 import { 
   LayoutDashboard, Users, AlertTriangle, ShieldAlert, Cpu, Zap, 
   TrendingUp, FileText, HelpCircle, LogOut, Clock, ShieldCheck,
-  Sun, Moon, Monitor, Smartphone, Menu, X, User
+  Sun, Moon, Monitor, Smartphone, Menu, X, User, Briefcase
 } from 'lucide-react';
 
 export default function App() {
@@ -494,7 +494,7 @@ export default function App() {
           ) : (
             <>
               <button className={`nav-item ${page === 'emp_dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_dashboard')}>
-                <LayoutDashboard size={16} /> My Portal
+                <Briefcase size={16} /> My Workspace
               </button>
               <button className={`nav-item ${page === 'profile' ? 'active' : ''}`} onClick={() => handlePageSelect('profile')}>
                 <User size={16} /> My Security Profile

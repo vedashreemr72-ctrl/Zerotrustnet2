@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Clock, AlertTriangle, Activity, FileText, Upload, Download, Key, Cpu, ExternalLink, Lock, CheckCircle2, Archive, FolderArchive, FolderOpen, FileCheck, Eye, AlertCircle, Layers, MapPin, Navigation } from 'lucide-react';
+import { 
+  Shield, Clock, AlertTriangle, Activity, FileText, Upload, Download, Key, 
+  Cpu, ExternalLink, Lock, CheckCircle2, Archive, FolderArchive, FolderOpen, 
+  FileCheck, Eye, AlertCircle, Layers, MapPin, Navigation,
+  Briefcase, CheckSquare, Square, Plus, Trash2, BookOpen, GitBranch, Terminal, 
+  Sparkles, Folder, File, Send, Save, Check, Users, Calendar, 
+  Play, Copy, RefreshCw, X, Search, Filter, ShieldCheck, CheckCircle
+} from 'lucide-react';
 import { fetchRealTimeLocation } from '../utils/geolocation';
 import { formatLocalTime, formatShortTime, formatLocalDateTime, getRelativeRealTime } from '../utils/timeFormat';
 
@@ -126,6 +133,286 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
     } finally {
       setAppealSubmitting(false);
     }
+  };
+
+  // ==========================================
+  // EMPLOYEE WORKSPACE STATE & METHODS
+  // ==========================================
+  const [activeTab, setActiveTab] = useState('workspace'); // 'workspace', 'tasks', 'files', 'security'
+  
+  // Tasks state
+  const defaultWorkspaceTasks = [
+    { id: 1, title: 'Review Q3 Sprint PR #284 for API Gateway microsegmentation', priority: 'High', project: 'Zero Trust Gateway', completed: false, due: 'Today' },
+    { id: 2, title: 'Verify IAM role policy rules for dev cluster access', priority: 'High', project: 'Identity Governance', completed: false, due: 'Today' },
+    { id: 3, title: 'Update department runbook with latest OAuth2 token specs', priority: 'Medium', project: 'Documentation', completed: true, due: 'Yesterday' },
+    { id: 4, title: 'Complete Insider Threat DLP security baseline check', priority: 'Medium', project: 'Compliance', completed: false, due: 'In 2 days' },
+    { id: 5, title: 'Prepare deliverables for weekly sprint demo & SOC sync', priority: 'Low', project: 'Sprint 24', completed: false, due: 'Friday' }
+  ];
+
+  const [workspaceTasks, setWorkspaceTasks] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`ztn_tasks_${user.username || user.email || 'emp'}`);
+      return saved ? JSON.parse(saved) : defaultWorkspaceTasks;
+    } catch (e) {
+      return defaultWorkspaceTasks;
+    }
+  });
+
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState('Medium');
+  const [newTaskProject, setNewTaskProject] = useState('Sprint 24');
+  const [taskFilter, setTaskFilter] = useState('all');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`ztn_tasks_${user.username || user.email || 'emp'}`, JSON.stringify(workspaceTasks));
+    } catch (e) {
+      console.warn('Failed to save tasks:', e);
+    }
+  }, [workspaceTasks, user.username, user.email]);
+
+  const toggleTask = (taskId) => {
+    setWorkspaceTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t));
+  };
+
+  const handleAddTask = (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim()) return;
+    const item = {
+      id: Date.now(),
+      title: newTaskTitle.trim(),
+      priority: newTaskPriority,
+      project: newTaskProject || 'Workspace',
+      completed: false,
+      due: 'This Week'
+    };
+    setWorkspaceTasks(prev => [item, ...prev]);
+    setNewTaskTitle('');
+  };
+
+  const handleDeleteTask = (taskId) => {
+    setWorkspaceTasks(prev => prev.filter(t => t.id !== taskId));
+  };
+
+  // Workspace Scratchpad / Notes State
+  const [workspaceNotes, setWorkspaceNotes] = useState(() => {
+    try {
+      return localStorage.getItem(`ztn_notes_${user.username || user.email || 'emp'}`) || 
+`# Daily Workspace Notes - ${new Date().toLocaleDateString()}
+- [x] Attended 10:00 AM Team Standup
+- [ ] Review sprint architectural document
+- [ ] Verify Zero Trust DLP payload policies
+
+Security Context: Continuous Verification Active (10-file daily quota enforced).`;
+    } catch (e) {
+      return '';
+    }
+  });
+  const [notesSavedAlert, setNotesSavedAlert] = useState(false);
+
+  const handleSaveNotes = () => {
+    try {
+      localStorage.setItem(`ztn_notes_${user.username || user.email || 'emp'}`, workspaceNotes);
+      setNotesSavedAlert(true);
+      setTimeout(() => setNotesSavedAlert(false), 2500);
+    } catch (e) {
+      console.warn('Failed to save notes:', e);
+    }
+  };
+
+  // Workspace Document Vault (Tied to the 10-File Daily Quota)
+  const workspaceDocuments = [
+    {
+      id: 'doc-1',
+      filename: 'Sprint_24_Architecture_Spec.pdf',
+      classification: 'Confidential',
+      department: user.department || 'Engineering',
+      sizeMb: 4.2,
+      lastModified: '2026-10-06',
+      author: 'Lead Architect',
+      type: 'PDF',
+      summary: 'High-level cloud microservices topology with mutual TLS encryption, Zero Trust policy enforcement points, and Redis cache clusters.',
+      contentPreview: [
+        '1. EXECUTIVE OVERVIEW: This document details the transition to decentralized Zero Trust microsegmentation.',
+        '2. AUTHENTICATION PROTOCOL: All internal services require cryptographically signed JSON Web Tokens (JWT) with 15-minute expiration.',
+        '3. DATA LOSS PREVENTION: All outbound egress channels inspect document classification tags before release.',
+        '4. AUDIT COMPLIANCE: Continuous logging must be fed to SOC telemetry stream.'
+      ]
+    },
+    {
+      id: 'doc-2',
+      filename: 'ZeroTrust_Security_Policy_2026.pdf',
+      classification: 'Confidential',
+      department: 'Cybersecurity',
+      sizeMb: 2.8,
+      lastModified: '2026-10-05',
+      author: 'CISO Office',
+      type: 'PDF',
+      summary: 'Corporate compliance standard: mandatory multi-factor authentication, device fingerprinting, and max 10 file daily download ceiling.',
+      contentPreview: [
+        'POLICY DIRECTIVE 2026-SEC-01:',
+        '• Principle of Least Privilege: Employees access only resources required for assigned active sprint items.',
+        '• Daily File Quota: Standard employees are limited to 10 file operations per 24 hours. Extensions require formal admin appeal.',
+        '• Geolocation Verification: Logins from anomalous regions trigger automated step-up challenges.'
+      ]
+    },
+    {
+      id: 'doc-3',
+      filename: 'Database_Schema_Migration_v4.sql',
+      classification: 'Restricted',
+      department: 'Database Ops',
+      sizeMb: 1.5,
+      lastModified: '2026-10-04',
+      author: 'Data Platform Team',
+      type: 'SQL',
+      summary: 'PostgreSQL & SQLite schema changes adding user registration review statuses, approval audit logs, and file quota tracking.',
+      contentPreview: [
+        '-- ZeroTrustNet v4 Migration Script',
+        'ALTER TABLE users ADD COLUMN approval_status TEXT DEFAULT "Pending";',
+        'ALTER TABLE users ADD COLUMN reviewed_at TIMESTAMP;',
+        'ALTER TABLE users ADD COLUMN reviewed_by TEXT;',
+        'CREATE INDEX idx_user_approval ON users(approval_status);'
+      ]
+    },
+    {
+      id: 'doc-4',
+      filename: 'Client_Onboarding_Handbook.pdf',
+      classification: 'Internal',
+      department: 'Client Success',
+      sizeMb: 3.1,
+      lastModified: '2026-10-02',
+      author: 'Operations Director',
+      type: 'PDF',
+      summary: 'Standard operating procedures for provisioning new enterprise client environments under strict perimeterless security.',
+      contentPreview: [
+        'Section A: Initial Client Verification & Domain DNS TXT Validation.',
+        'Section B: Single Sign-On (SAML 2.0 / OIDC) Federation Setup.',
+        'Section C: Incident escalation path and SOC emergency contact directory.'
+      ]
+    },
+    {
+      id: 'doc-5',
+      filename: 'API_Microservices_Contract.json',
+      classification: 'Internal',
+      department: 'Engineering',
+      sizeMb: 0.8,
+      lastModified: '2026-10-01',
+      author: 'Backend Team',
+      type: 'JSON',
+      summary: 'OpenAPI 3.1 specification for employee endpoints, telemetry streaming, UEBA calculation, and file vault quota checks.',
+      contentPreview: [
+        '{\n  "openapi": "3.1.0",\n  "info": { "title": "ZeroTrustNet Core API", "version": "5.0" },\n  "paths": {\n    "/api/employee/file-access": { "post": { "security": [{ "bearerAuth": [] }] } },\n    "/api/employee/appeal-access": { "post": { "summary": "Quota appeal" } }\n  }\n}'
+      ]
+    },
+    {
+      id: 'doc-6',
+      filename: 'Q3_Financial_Forecast_Model.xlsx',
+      classification: 'Confidential',
+      department: 'Finance',
+      sizeMb: 5.6,
+      lastModified: '2026-09-28',
+      author: 'Finance Controller',
+      type: 'XLSX',
+      summary: 'Departmental budget allocations, cybersecurity tooling ROI analysis, and enterprise licensing projections.',
+      contentPreview: [
+        'SHEET: Q3_Projections',
+        'Row 1: Cybersecurity Infrastructure: $420,000 [Allocated]',
+        'Row 2: Cloud Computing Compute (AWS / Azure): $310,000 [Allocated]',
+        'Row 3: Identity Verification & HSM Tokens: $95,000 [Allocated]'
+      ]
+    }
+  ];
+
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [activeSprintModal, setActiveSprintModal] = useState(null);
+
+  // File access helper connecting workspace downloads to the 10-file quota
+  const handleWorkspaceFileAccess = async (docItem, op = 'Download') => {
+    setActionLoading(true);
+    setActionAlert({ type: '', msg: '' });
+    try {
+      const res = await fetch('/api/employee/file-access', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          filename: docItem.filename,
+          classification: docItem.classification,
+          operation: op,
+          file_size_mb: docItem.sizeMb || 2.5
+        })
+      });
+
+      const resData = await res.json();
+      if (!res.ok) {
+        if (resData.quota_exceeded) {
+          setShowAppealModal(true);
+          fetchAppeals();
+          setActionAlert({ type: 'error', msg: `⛔ Quota Reached: ${resData.error} (Maximum 10-file access limit). Please appeal for access.` });
+          return;
+        }
+        throw new Error(resData.error || 'File access failed');
+      }
+
+      if (resData.is_flagged) {
+        setShowStepUpModal(true);
+      }
+
+      setActionAlert({ type: resData.is_flagged ? 'warning' : 'success', msg: `📥 File accessed: ${docItem.filename} (${resData.message})` });
+      fetchDashboardData();
+    } catch (err) {
+      setActionAlert({ type: 'error', msg: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Interactive Terminal Simulator State & Handler
+  const [showTerminalModal, setShowTerminalModal] = useState(false);
+  const [terminalCommands, setTerminalCommands] = useState([
+    { type: 'output', text: 'ZeroTrustNet Enterprise Secure Shell v5.0 [Node ID: ztn-workstation-secure]' },
+    { type: 'output', text: 'Type "help", "status", "whoami", "quota", "tasks", or "ping" to interact.' }
+  ]);
+  const [terminalInput, setTerminalInput] = useState('');
+
+  const handleTerminalSubmit = (e) => {
+    e.preventDefault();
+    const cmd = terminalInput.trim();
+    if (!cmd) return;
+    const lower = cmd.toLowerCase();
+    let responseText = '';
+
+    if (lower === 'help') {
+      responseText = 'Commands: help, status, whoami, quota, tasks, ping, zt-verify, clear';
+    } else if (lower === 'status') {
+      responseText = `System Status: Operational | User: ${user.name} | Dept: ${user.department} | Risk Score: ${data?.risk_score ?? 0}/100`;
+    } else if (lower === 'whoami') {
+      responseText = `User: ${user.name} (${user.username || user.email}) | Role: ${user.role} | Device: ${user.device_id || 'DEV-WIN-PRO'}`;
+    } else if (lower === 'quota') {
+      responseText = `File Quota: ${data?.file_quota?.used || 0}/${data?.file_quota?.limit || 10} files used today.`;
+    } else if (lower === 'tasks') {
+      const pending = workspaceTasks.filter(t => !t.completed).length;
+      responseText = `Tasks: ${pending} pending out of ${workspaceTasks.length} total.`;
+    } else if (lower === 'clear') {
+      setTerminalCommands([]);
+      setTerminalInput('');
+      return;
+    } else if (lower === 'zt-verify') {
+      responseText = 'Zero Trust Cryptographic Handshake: PASSED (Signature: sha256:7f8a92bc80...)';
+    } else if (lower.startsWith('ping')) {
+      responseText = 'PING internal-gateway (10.0.4.1): 64 bytes, time=1.2ms, status=SECURE_TUNNEL';
+    } else {
+      responseText = `Command not recognized: "${cmd}". Type "help" for available commands.`;
+    }
+
+    setTerminalCommands(prev => [
+      ...prev,
+      { type: 'input', text: `$ ${cmd}` },
+      { type: 'output', text: responseText }
+    ]);
+    setTerminalInput('');
   };
 
   const handleRealFileUploadSubmit = async (e) => {
@@ -572,11 +859,1116 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
 
   return (
     <div>
-      <div className="zt-title">Employee Zero Trust Portal: {user.name}</div>
-      <div className="zt-subtitle">{user.department} · {user.emp_type} · Continuous Session Authentication Active</div>
+      <div className="zt-title">Employee Workspace & Portal: {user.name}</div>
+      <div className="zt-subtitle">{user.department} Department · {user.emp_type} · Cryptographic Zero Trust Verified</div>
 
-      {/* Step 1: Enterprise Secure Session Telemetry Card */}
-      <div className="zt-card" style={{
+      {/* Top Workspace View Navigation Bar */}
+      <div style={{
+        display: 'flex',
+        gap: '0.65rem',
+        marginTop: '1rem',
+        marginBottom: '1.35rem',
+        borderBottom: '1px solid rgba(0, 245, 255, 0.15)',
+        paddingBottom: '0.85rem',
+        flexWrap: 'wrap',
+        alignItems: 'center'
+      }}>
+        <button
+          className={`zt-btn ${activeTab === 'workspace' ? '' : 'zt-btn-sec'}`}
+          style={{
+            padding: '0.55rem 1.25rem',
+            fontSize: '0.88rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: activeTab === 'workspace' ? 'linear-gradient(135deg, rgba(0, 245, 255, 0.25), rgba(0, 128, 255, 0.3))' : 'rgba(15, 23, 42, 0.6)',
+            borderColor: activeTab === 'workspace' ? '#00f5ff' : 'rgba(255, 255, 255, 0.1)',
+            color: activeTab === 'workspace' ? '#00f5ff' : '#94a3b8',
+            boxShadow: activeTab === 'workspace' ? '0 0 15px rgba(0, 245, 255, 0.25)' : 'none'
+          }}
+          onClick={() => setActiveTab('workspace')}
+        >
+          <Briefcase size={16} /> 💼 My Workspace
+        </button>
+
+        <button
+          className={`zt-btn ${activeTab === 'tasks' ? '' : 'zt-btn-sec'}`}
+          style={{
+            padding: '0.55rem 1.15rem',
+            fontSize: '0.85rem',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: activeTab === 'tasks' ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.3))' : 'rgba(15, 23, 42, 0.6)',
+            borderColor: activeTab === 'tasks' ? '#10b981' : 'rgba(255, 255, 255, 0.1)',
+            color: activeTab === 'tasks' ? '#10b981' : '#94a3b8'
+          }}
+          onClick={() => setActiveTab('tasks')}
+        >
+          <CheckSquare size={16} /> 📋 Tasks & Sprints ({workspaceTasks.filter(t => !t.completed).length})
+        </button>
+
+        <button
+          className={`zt-btn ${activeTab === 'files' ? '' : 'zt-btn-sec'}`}
+          style={{
+            padding: '0.55rem 1.15rem',
+            fontSize: '0.85rem',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: activeTab === 'files' ? 'linear-gradient(135deg, rgba(234, 179, 8, 0.25), rgba(217, 119, 6, 0.3))' : 'rgba(15, 23, 42, 0.6)',
+            borderColor: activeTab === 'files' ? '#eab308' : 'rgba(255, 255, 255, 0.1)',
+            color: activeTab === 'files' ? '#eab308' : '#94a3b8'
+          }}
+          onClick={() => setActiveTab('files')}
+        >
+          <Folder size={16} /> 📁 Project Files & Vault ({data?.file_quota ? `${data.file_quota.used}/${data.file_quota.limit}` : '10 Quota'})
+        </button>
+
+        <button
+          className={`zt-btn ${activeTab === 'security' ? '' : 'zt-btn-sec'}`}
+          style={{
+            padding: '0.55rem 1.15rem',
+            fontSize: '0.85rem',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: activeTab === 'security' ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(126, 34, 206, 0.3))' : 'rgba(15, 23, 42, 0.6)',
+            borderColor: activeTab === 'security' ? '#c084fc' : 'rgba(255, 255, 255, 0.1)',
+            color: activeTab === 'security' ? '#c084fc' : '#94a3b8'
+          }}
+          onClick={() => setActiveTab('security')}
+        >
+          <Shield size={16} /> 🛡️ Security & Zero Trust Telemetry
+        </button>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 1. WORKSPACE VIEW (DEFAULT ON LOGIN) */}
+      {/* ======================================================== */}
+      {activeTab === 'workspace' && (
+        <div>
+          {/* Workspace Welcome & Live Status Hero */}
+          <div className="zt-card" style={{
+            padding: '1.25rem 1.5rem',
+            marginBottom: '1.25rem',
+            background: 'linear-gradient(135deg, rgba(0, 245, 255, 0.08) 0%, rgba(15, 23, 42, 0.9) 100%)',
+            border: '1px solid rgba(0, 245, 255, 0.25)',
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
+                  <div style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, #00f5ff, #0080ff)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#0f172a',
+                    fontWeight: 'bold',
+                    fontSize: '1.1rem'
+                  }}>
+                    💼
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.28rem', color: '#f8fafc', fontWeight: '700' }}>
+                      Welcome to your Workspace, {user.name} 👋
+                    </h2>
+                    <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                      {user.department || 'Engineering'} Department · Zero Trust Session Verified · Cryptographic Perimeter Active
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: '8px',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  color: '#10b981',
+                  fontSize: '0.78rem',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }}></span>
+                  Session Active
+                </div>
+                <button
+                  className="zt-btn"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => setShowTerminalModal(true)}
+                >
+                  <Terminal size={14} /> Cloud Terminal
+                </button>
+                <button
+                  className="zt-btn zt-btn-sec"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => setActiveTab('security')}
+                >
+                  <Shield size={14} /> Security Telemetry
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 4 Workspace Quick Metric KPI Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.25rem'
+          }}>
+            {/* File Access Quota KPI Card */}
+            <div className="zt-card" style={{
+              padding: '1rem 1.15rem',
+              borderLeft: `4px solid ${data?.file_quota?.is_exhausted ? '#ef4444' : '#00f5ff'}`,
+              background: data?.file_quota?.is_exhausted ? 'rgba(239, 68, 68, 0.05)' : 'rgba(15, 23, 42, 0.7)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  📁 Daily File Quota
+                </span>
+                <Folder size={17} color={data?.file_quota?.is_exhausted ? '#ef4444' : '#00f5ff'} />
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: data?.file_quota?.is_exhausted ? '#ef4444' : '#f8fafc' }}>
+                {data?.file_quota ? `${data.file_quota.used} / ${data.file_quota.limit}` : '0 / 10'} Files
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{data?.file_quota?.is_exhausted ? 'Limit reached (10/10)' : `${10 - (data?.file_quota?.used || 0)} accesses remaining`}</span>
+                <button 
+                  onClick={() => { setShowAppealModal(true); fetchAppeals(); }}
+                  style={{ background: 'transparent', border: 'none', color: '#eab308', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                >
+                  {data?.file_quota?.is_exhausted ? 'Appeal Now' : 'Request More'}
+                </button>
+              </div>
+            </div>
+
+            {/* Tasks KPI Card */}
+            <div className="zt-card" style={{
+              padding: '1rem 1.15rem',
+              borderLeft: '4px solid #10b981',
+              background: 'rgba(15, 23, 42, 0.7)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  📋 My Sprint Tasks
+                </span>
+                <CheckSquare size={17} color="#10b981" />
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: '#f8fafc' }}>
+                {workspaceTasks.filter(t => !t.completed).length} Pending
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{workspaceTasks.filter(t => t.completed).length} of {workspaceTasks.length} completed</span>
+                <span style={{ color: '#10b981' }}>{Math.round((workspaceTasks.filter(t => t.completed).length / (workspaceTasks.length || 1)) * 100)}%</span>
+              </div>
+            </div>
+
+            {/* Active Sprint KPI Card */}
+            <div className="zt-card" style={{
+              padding: '1rem 1.15rem',
+              borderLeft: '4px solid #38bdf8',
+              background: 'rgba(15, 23, 42, 0.7)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  🚀 Current Sprint
+                </span>
+                <Briefcase size={17} color="#38bdf8" />
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: '#f8fafc' }}>
+                Sprint 24 · Active
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                Target: Zero Trust Mesh Deployment (4 days left)
+              </div>
+            </div>
+
+            {/* Zero Trust Score KPI Card */}
+            <div className="zt-card" style={{
+              padding: '1rem 1.15rem',
+              borderLeft: `4px solid ${riskColor}`,
+              background: 'rgba(15, 23, 42, 0.7)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  🛡️ Trust Compliance
+                </span>
+                <ShieldCheck size={17} color={riskColor} />
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: '#f8fafc' }}>
+                {Math.max(0, 100 - (risk_score || 0))} / 100
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                Behavior: <strong style={{ color: riskColor }}>{severity.replace(/[^\w\s]/g, '').trim()}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Workspace Layout (2 columns: 1.25fr and 0.75fr) */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1.25fr 0.75fr',
+            gap: '1.25rem',
+            alignItems: 'start'
+          }}>
+            {/* LEFT COLUMN: Sprints, Document Vault, Tasks */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {/* 1. Department Projects & Sprints Board */}
+              <div className="zt-card" style={{ padding: '1.2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', color: '#00f5ff' }}>
+                    <Briefcase size={18} />
+                    <span>Department Projects & Active Sprints</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8', background: 'rgba(0, 245, 255, 0.1)', padding: '2px 8px', borderRadius: '4px' }}>
+                    Q3 Roadmap
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {/* Project 1 */}
+                  <div style={{
+                    padding: '0.85rem 1rem',
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(0, 245, 255, 0.15)',
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#f8fafc' }}>
+                          Zero Trust Access Gateway v2.4
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>
+                          Sprint 24 · Microservices auth mesh & Mutual TLS enforcement
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', fontWeight: 'bold' }}>
+                        82% Complete
+                      </span>
+                    </div>
+                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden', margin: '0.5rem 0' }}>
+                      <div style={{ width: '82%', height: '100%', background: 'linear-gradient(90deg, #00f5ff, #22c55e)', borderRadius: '3px' }}></div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.7rem', color: '#64748b' }}>
+                      <span>Lead: {user.name} & Engineering Core</span>
+                      <button
+                        onClick={() => setActiveSprintModal({
+                          title: 'Zero Trust Access Gateway v2.4',
+                          sprint: 'Sprint 24',
+                          progress: 82,
+                          desc: 'Transitioning internal API gateway to decentralized mutual TLS with continuous behavioral telemetry token binding.',
+                          deliverables: ['Mutual TLS handshake validation', 'Redis session cache replication', 'Automated step-up MFA challenge hook']
+                        })}
+                        style={{ background: 'transparent', border: 'none', color: '#00f5ff', fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}
+                      >
+                        View Sprint Details →
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Project 2 */}
+                  <div style={{
+                    padding: '0.85rem 1rem',
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#f8fafc' }}>
+                          Confidential DLP & Insider Threat Shield
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>
+                          Sprint 12 · 10-File quota enforcement & anomalous download mitigation
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', fontWeight: 'bold' }}>
+                        64% In Progress
+                      </span>
+                    </div>
+                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden', margin: '0.5rem 0' }}>
+                      <div style={{ width: '64%', height: '100%', background: 'linear-gradient(90deg, #eab308, #38bdf8)', borderRadius: '3px' }}></div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.7rem', color: '#64748b' }}>
+                      <span>Lead: SOC & Security Operations</span>
+                      <button
+                        onClick={() => setActiveSprintModal({
+                          title: 'Confidential DLP & Insider Threat Shield',
+                          sprint: 'Sprint 12',
+                          progress: 64,
+                          desc: 'Implementing strict quota ceilings (10 files/day) and administrative review escalation for unapproved mass exfiltration.',
+                          deliverables: ['File quota counter middleware', 'Admin appeal review queue', 'Encrypted file hash watermark']
+                        })}
+                        style={{ background: 'transparent', border: 'none', color: '#00f5ff', fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}
+                      >
+                        View Sprint Details →
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Project 3 */}
+                  <div style={{
+                    padding: '0.85rem 1rem',
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#f8fafc' }}>
+                          SOC Event Bus & Immutable Audit Sync
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>
+                          Sprint 18 · Real-time event streaming & cryptographic audit chain
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', fontWeight: 'bold' }}>
+                        95% Testing
+                      </span>
+                    </div>
+                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden', margin: '0.5rem 0' }}>
+                      <div style={{ width: '95%', height: '100%', background: 'linear-gradient(90deg, #c084fc, #00f5ff)', borderRadius: '3px' }}></div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.7rem', color: '#64748b' }}>
+                      <span>Lead: Cloud Infrastructure Team</span>
+                      <button
+                        onClick={() => setActiveSprintModal({
+                          title: 'SOC Event Bus & Immutable Audit Sync',
+                          sprint: 'Sprint 18',
+                          progress: 95,
+                          desc: 'Streaming high-fidelity behavioral telemetry into immutable audit logs with instant alerting upon outlier detection.',
+                          deliverables: ['Kafka event pipe synchronization', 'Cryptographic tamper checks', 'Admin report exporter']
+                        })}
+                        style={{ background: 'transparent', border: 'none', color: '#00f5ff', fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}
+                      >
+                        View Sprint Details →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Enterprise Document Vault & Project Files (Tied to the 10-File Quota!) */}
+              <div className="zt-card" style={{ padding: '1.2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', color: '#00f5ff' }}>
+                    <Folder size={18} />
+                    <span>Workspace Document Vault & Repository</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      fontSize: '0.72rem',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      background: data?.file_quota?.is_exhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(0, 245, 255, 0.1)',
+                      border: `1px solid ${data?.file_quota?.is_exhausted ? '#ef4444' : 'rgba(0, 245, 255, 0.3)'}`,
+                      color: data?.file_quota?.is_exhausted ? '#ef4444' : '#00f5ff',
+                      fontWeight: 'bold'
+                    }}>
+                      📁 Quota: {data?.file_quota ? `${data.file_quota.used}/${data.file_quota.limit}` : '0/10'} Files
+                    </div>
+                    <button
+                      className="zt-btn"
+                      style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+                      onClick={() => setActiveModal('upload_doc')}
+                    >
+                      <Upload size={12} /> Upload
+                    </button>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.76rem', color: '#94a3b8', marginBottom: '0.85rem' }}>
+                  Access sprint specifications, compliance guidelines, and system architectures. Every access is monitored under Zero Trust DLP guardrails (maximum 10 files daily).
+                </p>
+
+                <div className="zt-table-container">
+                  <table className="zt-table" style={{ fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Document Name</th>
+                        <th>Classification</th>
+                        <th>Size</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workspaceDocuments.map((doc) => (
+                        <tr key={doc.id}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '1rem' }}>
+                                {doc.type === 'PDF' ? '📄' : doc.type === 'SQL' ? '🗄️' : doc.type === 'JSON' ? '⚙️' : '📊'}
+                              </span>
+                              <div>
+                                <div style={{ fontWeight: '600', color: '#e2e8f0' }}>{doc.filename}</div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{doc.department} · {doc.author}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`zt-badge ${doc.classification === 'Restricted' ? 'bc' : doc.classification === 'Confidential' ? 'bm' : 'bl'}`} style={{ fontSize: '0.65rem' }}>
+                              {doc.classification}
+                            </span>
+                          </td>
+                          <td style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{doc.sizeMb} MB</td>
+                          <td style={{ color: '#64748b', fontSize: '0.72rem' }}>{doc.lastModified}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                className="zt-btn zt-btn-sec"
+                                style={{ padding: '3px 7px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                onClick={() => setPreviewDoc(doc)}
+                                title="Quick Document Preview"
+                              >
+                                <Eye size={12} /> View
+                              </button>
+                              <button
+                                className="zt-btn"
+                                style={{ padding: '3px 7px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                onClick={() => handleWorkspaceFileAccess(doc)}
+                                disabled={actionLoading}
+                                title="Download File (Counts to Quota)"
+                              >
+                                <Download size={12} /> Get
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {data?.file_quota?.is_exhausted && (
+                  <div style={{
+                    marginTop: '0.75rem',
+                    padding: '0.65rem 0.85rem',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid #ef4444',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ fontSize: '0.78rem', color: '#ef4444', fontWeight: 'bold' }}>
+                      ⚠️ Daily 10-File Access Quota Reached. Additional operations blocked.
+                    </span>
+                    <button
+                      className="zt-btn"
+                      style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#ef4444', color: '#fff' }}
+                      onClick={() => { setShowAppealModal(true); fetchAppeals(); }}
+                    >
+                      Submit Appeal
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Interactive Tasks / Work Checklist */}
+              <div className="zt-card" style={{ padding: '1.2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', color: '#10b981' }}>
+                    <CheckSquare size={18} />
+                    <span>My Work Checklist & Daily Tasks</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {['all', 'pending', 'completed'].map((filterType) => (
+                      <button
+                        key={filterType}
+                        onClick={() => setTaskFilter(filterType)}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          border: taskFilter === filterType ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.08)',
+                          background: taskFilter === filterType ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                          color: taskFilter === filterType ? '#10b981' : '#94a3b8',
+                          fontSize: '0.72rem',
+                          cursor: 'pointer',
+                          textTransform: 'capitalize'
+                        }}
+                      >
+                        {filterType}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Add Task Form */}
+                <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '6px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    className="zt-input"
+                    style={{ flex: 1, minWidth: '180px', padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
+                    placeholder="Add a new deliverable or sprint to-do item..."
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                  />
+                  <select
+                    className="zt-input"
+                    style={{ width: '100px', padding: '0.45rem', fontSize: '0.78rem' }}
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value)}
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="zt-btn"
+                    style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', background: '#10b981', color: '#0f172a', fontWeight: 'bold' }}
+                  >
+                    <Plus size={14} /> Add Task
+                  </button>
+                </form>
+
+                {/* Task Items List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '280px', overflowY: 'auto' }}>
+                  {workspaceTasks
+                    .filter(t => taskFilter === 'all' ? true : taskFilter === 'pending' ? !t.completed : t.completed)
+                    .map((task) => (
+                      <div
+                        key={task.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.6rem 0.8rem',
+                          background: task.completed ? 'rgba(15, 23, 42, 0.35)' : 'rgba(15, 23, 42, 0.7)',
+                          border: `1px solid ${task.completed ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.09)'}`,
+                          borderRadius: '6px',
+                          gap: '8px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                          <div 
+                            onClick={() => toggleTask(task.id)}
+                            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                          >
+                            {task.completed ? (
+                              <CheckSquare size={17} color="#10b981" />
+                            ) : (
+                              <Square size={17} color="#64748b" />
+                            )}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{
+                              fontSize: '0.82rem',
+                              color: task.completed ? '#64748b' : '#e2e8f0',
+                              textDecoration: task.completed ? 'line-through' : 'none',
+                              fontWeight: task.completed ? 'normal' : '500'
+                            }}>
+                              {task.title}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: '#64748b', display: 'flex', gap: '8px', marginTop: '2px' }}>
+                              <span>🏷️ {task.project}</span>
+                              <span>📅 {task.due}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{
+                            fontSize: '0.65rem',
+                            padding: '2px 5px',
+                            borderRadius: '3px',
+                            fontWeight: 'bold',
+                            background: task.priority === 'High' ? 'rgba(239, 68, 68, 0.15)' : task.priority === 'Medium' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                            color: task.priority === 'High' ? '#ef4444' : task.priority === 'Medium' ? '#eab308' : '#22c55e'
+                          }}>
+                            {task.priority}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteTask(task.id)}
+                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '3px', display: 'flex' }}
+                            title="Delete task"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  {workspaceTasks.length === 0 && (
+                    <div style={{ padding: '1rem', textAlign: 'center', color: '#64748b', fontSize: '0.8rem' }}>
+                      No tasks in your workspace. Add one above!
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* RIGHT COLUMN: Tool Launchpad, Persistent Scratchpad, Live Feed */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {/* 1. Corporate App & Dev Tools Launchpad */}
+              <div className="zt-card" style={{ padding: '1.2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.92rem', color: '#38bdf8', marginBottom: '0.85rem' }}>
+                  <Cpu size={17} />
+                  <span>Enterprise App Launchpad</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.65rem' }}>
+                  {/* Tool 1 */}
+                  <div 
+                    onClick={() => alert("GitLab Enterprise SSO Handshake Successful. Repository verified under Zero Trust mutual TLS.")}
+                    style={{
+                      padding: '0.75rem',
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      border: '1px solid rgba(0, 245, 255, 0.15)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, border-color 0.15s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.borderColor = '#00f5ff'}
+                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(0, 245, 255, 0.15)'}
+                  >
+                    <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🐙</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: '#f8fafc' }}>Git Repos</div>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b' }}>GitLab VCS</div>
+                  </div>
+
+                  {/* Tool 2 */}
+                  <div 
+                    onClick={() => alert("Jenkins CI/CD Pipeline Status: Build #1049 passed. Container signature verified.")}
+                    style={{
+                      padding: '0.75rem',
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      border: '1px solid rgba(16, 185, 129, 0.15)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, border-color 0.15s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.borderColor = '#10b981'}
+                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.15)'}
+                  >
+                    <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>⚡</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: '#f8fafc' }}>CI/CD Pipelines</div>
+                    <div style={{ fontSize: '0.68rem', color: '#22c55e' }}>Builds Passing ✓</div>
+                  </div>
+
+                  {/* Tool 3 */}
+                  <div 
+                    onClick={() => setShowTerminalModal(true)}
+                    style={{
+                      padding: '0.75rem',
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      border: '1px solid rgba(168, 85, 247, 0.15)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, border-color 0.15s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.borderColor = '#c084fc'}
+                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.15)'}
+                  >
+                    <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>💻</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: '#f8fafc' }}>Cloud Shell</div>
+                    <div style={{ fontSize: '0.68rem', color: '#c084fc' }}>Secure Terminal</div>
+                  </div>
+
+                  {/* Tool 4 */}
+                  <div 
+                    onClick={() => alert("Enterprise Confluence Wiki loaded with latest Zero Trust Runbooks.")}
+                    style={{
+                      padding: '0.75rem',
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      border: '1px solid rgba(234, 179, 8, 0.15)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, border-color 0.15s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.borderColor = '#eab308'}
+                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(234, 179, 8, 0.15)'}
+                  >
+                    <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>📚</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: '#f8fafc' }}>Team Wiki</div>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Confluence Docs</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Interactive Work Scratchpad / Notes */}
+              <div className="zt-card" style={{ padding: '1.2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.92rem', color: '#fbbf24' }}>
+                    <FileText size={17} />
+                    <span>Workspace Scratchpad & Notes</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button
+                      onClick={handleSaveNotes}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: '#fbbf24',
+                        color: '#0f172a',
+                        border: 'none',
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {notesSavedAlert ? 'Saved ✓' : '💾 Save'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(workspaceNotes);
+                        alert("Notes copied to clipboard!");
+                      }}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        color: '#cbd5e1',
+                        border: 'none',
+                        fontSize: '0.72rem',
+                        cursor: 'pointer'
+                      }}
+                      title="Copy to clipboard"
+                    >
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  className="zt-input"
+                  rows={6}
+                  style={{
+                    width: '100%',
+                    fontFamily: 'monospace',
+                    fontSize: '0.78rem',
+                    lineHeight: '1.4',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                    padding: '0.6rem'
+                  }}
+                  value={workspaceNotes}
+                  onChange={(e) => setWorkspaceNotes(e.target.value)}
+                  placeholder="Type work notes, meeting snippets, or daily memos here..."
+                />
+                <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{workspaceNotes.length} characters</span>
+                  <span>Auto-persisted in local session</span>
+                </div>
+              </div>
+
+              {/* 3. Live Team & Security Activity Feed */}
+              <div className="zt-card" style={{ padding: '1.2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.92rem', color: '#a78bfa', marginBottom: '0.75rem' }}>
+                  <Activity size={17} />
+                  <span>Workspace Activity & Team Feed</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <span style={{ color: '#22c55e', fontSize: '0.9rem' }}>●</span>
+                    <div>
+                      <div style={{ color: '#e2e8f0' }}>Priya K. approved pull request #284 for API Gateway</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b' }}>14 minutes ago · Engineering</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <span style={{ color: '#00f5ff', fontSize: '0.9rem' }}>●</span>
+                    <div>
+                      <div style={{ color: '#e2e8f0' }}>SOC Automated Engine verified container cryptographic hash</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b' }}>38 minutes ago · SOC Automated</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <span style={{ color: '#fbbf24', fontSize: '0.9rem' }}>●</span>
+                    <div>
+                      <div style={{ color: '#e2e8f0' }}>Rahul S. updated Sprint 24 architecture spec doc</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b' }}>1 hour ago · Sprint 24</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <span style={{ color: '#38bdf8', fontSize: '0.9rem' }}>●</span>
+                    <div>
+                      <div style={{ color: '#e2e8f0' }}>Zero Trust continuous heartbeat token re-validated</div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b' }}>2 hours ago · Identity Engine</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 2. DEDICATED TASKS & SPRINTS TAB VIEW */}
+      {/* ======================================================== */}
+      {activeTab === 'tasks' && (
+        <div className="zt-card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.18rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckSquare size={20} /> My Sprint Tasks & Project Deliverables
+              </h3>
+              <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                Track personal sprint tasks, high-priority deliverables, and department action items.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {['all', 'pending', 'completed'].map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setTaskFilter(f)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '5px',
+                    border: taskFilter === f ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                    background: taskFilter === f ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                    color: taskFilter === f ? '#10b981' : '#94a3b8',
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                    textTransform: 'capitalize'
+                  }}
+                >
+                  {f} ({f === 'all' ? workspaceTasks.length : f === 'pending' ? workspaceTasks.filter(t => !t.completed).length : workspaceTasks.filter(t => t.completed).length})
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Add Form */}
+          <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '8px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              className="zt-input"
+              style={{ flex: 2, minWidth: '220px', padding: '0.55rem 0.85rem' }}
+              placeholder="What task or deliverable are you adding today?"
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+            />
+            <select
+              className="zt-input"
+              style={{ width: '130px', padding: '0.55rem' }}
+              value={newTaskPriority}
+              onChange={(e) => setNewTaskPriority(e.target.value)}
+            >
+              <option value="High">🔴 High Priority</option>
+              <option value="Medium">🟡 Medium Priority</option>
+              <option value="Low">🟢 Low Priority</option>
+            </select>
+            <input
+              type="text"
+              className="zt-input"
+              style={{ width: '140px', padding: '0.55rem' }}
+              placeholder="Project tag"
+              value={newTaskProject}
+              onChange={(e) => setNewTaskProject(e.target.value)}
+            />
+            <button
+              type="submit"
+              className="zt-btn"
+              style={{ padding: '0.55rem 1.1rem', background: '#10b981', color: '#0f172a', fontWeight: 'bold' }}
+            >
+              <Plus size={16} /> Add New Task
+            </button>
+          </form>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {workspaceTasks
+              .filter(t => taskFilter === 'all' ? true : taskFilter === 'pending' ? !t.completed : t.completed)
+              .map((task) => (
+                <div
+                  key={task.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.85rem 1.1rem',
+                    background: task.completed ? 'rgba(15, 23, 42, 0.4)' : 'rgba(15, 23, 42, 0.75)',
+                    border: `1px solid ${task.completed ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 245, 255, 0.12)'}`,
+                    borderRadius: '8px',
+                    gap: '12px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                    <div 
+                      onClick={() => toggleTask(task.id)}
+                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                    >
+                      {task.completed ? (
+                        <CheckSquare size={20} color="#10b981" />
+                      ) : (
+                        <Square size={20} color="#64748b" />
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: '0.9rem',
+                        color: task.completed ? '#64748b' : '#f8fafc',
+                        textDecoration: task.completed ? 'line-through' : 'none',
+                        fontWeight: task.completed ? 'normal' : '600'
+                      }}>
+                        {task.title}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', display: 'flex', gap: '10px', marginTop: '3px' }}>
+                        <span>🏷️ {task.project}</span>
+                        <span>📅 Due: {task.due}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      fontSize: '0.7rem',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      fontWeight: 'bold',
+                      background: task.priority === 'High' ? 'rgba(239, 68, 68, 0.15)' : task.priority === 'Medium' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                      color: task.priority === 'High' ? '#ef4444' : task.priority === 'Medium' ? '#eab308' : '#22c55e'
+                    }}>
+                      {task.priority} Priority
+                    </span>
+                    <button
+                      onClick={() => handleDeleteTask(task.id)}
+                      className="zt-btn zt-btn-sec"
+                      style={{ padding: '4px 8px', color: '#ef4444' }}
+                      title="Delete task"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 3. DEDICATED FILE VAULT & QUOTA TAB VIEW */}
+      {/* ======================================================== */}
+      {activeTab === 'files' && (
+        <div className="zt-card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.18rem', color: '#00f5ff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Folder size={20} /> Enterprise File Vault & 10-File Daily Quota
+              </h3>
+              <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                Download sprint resources or upload documents to secure cloud storage. Daily quota ceiling: 10 files.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{
+                padding: '0.4rem 0.85rem',
+                borderRadius: '6px',
+                background: data?.file_quota?.is_exhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(0, 245, 255, 0.12)',
+                border: `1px solid ${data?.file_quota?.is_exhausted ? '#ef4444' : 'rgba(0, 245, 255, 0.4)'}`,
+                fontSize: '0.82rem',
+                color: data?.file_quota?.is_exhausted ? '#ef4444' : '#00f5ff',
+                fontWeight: 'bold'
+              }}>
+                📁 Quota Used: {data?.file_quota ? `${data.file_quota.used}/${data.file_quota.limit}` : '0/10'} Files
+              </div>
+              <button
+                className="zt-btn"
+                style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', background: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308', color: '#eab308' }}
+                onClick={() => { setShowAppealModal(true); fetchAppeals(); }}
+              >
+                📝 Access Appeal
+              </button>
+              <button
+                className="zt-btn"
+                style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}
+                onClick={() => setActiveModal('upload_doc')}
+              >
+                <Upload size={14} /> Upload File
+              </button>
+            </div>
+          </div>
+
+          {/* Document Table */}
+          <div className="zt-table-container">
+            <table className="zt-table">
+              <thead>
+                <tr>
+                  <th>File Details</th>
+                  <th>Classification</th>
+                  <th>Size</th>
+                  <th>Department</th>
+                  <th>Last Modified</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workspaceDocuments.map((doc) => (
+                  <tr key={doc.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1.25rem' }}>
+                          {doc.type === 'PDF' ? '📄' : doc.type === 'SQL' ? '🗄️' : doc.type === 'JSON' ? '⚙️' : '📊'}
+                        </span>
+                        <div>
+                          <div style={{ fontWeight: 'bold', color: '#f8fafc' }}>{doc.filename}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{doc.summary}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`zt-badge ${doc.classification === 'Restricted' ? 'bc' : doc.classification === 'Confidential' ? 'bm' : 'bl'}`}>
+                        {doc.classification}
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'monospace', color: '#94a3b8' }}>{doc.sizeMb} MB</td>
+                    <td style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>{doc.department}</td>
+                    <td style={{ color: '#64748b', fontSize: '0.75rem' }}>{doc.lastModified}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          className="zt-btn zt-btn-sec"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                          onClick={() => setPreviewDoc(doc)}
+                        >
+                          <Eye size={13} /> Preview
+                        </button>
+                        <button
+                          className="zt-btn"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                          onClick={() => handleWorkspaceFileAccess(doc)}
+                          disabled={actionLoading}
+                        >
+                          <Download size={13} /> Access
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 4. SECURITY & ZERO TRUST TELEMETRY VIEW */}
+      {/* ======================================================== */}
+      {activeTab === 'security' && (
+        <div>
+          {/* Step 1: Enterprise Secure Session Telemetry Card */}
+          <div className="zt-card" style={{
         padding: '1rem 1.25rem',
         marginBottom: '1.25rem',
         background: 'rgba(0, 245, 255, 0.04)',
@@ -1308,6 +2700,175 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
           </div>
         </div>
       </div>
+      </div>
+      )}
+
+      {/* Workspace Modal: Document Preview */}
+      {previewDoc && (
+        <div className="zt-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div className="zt-card" style={{ maxWidth: '640px', width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '1.5rem', border: '1px solid #00f5ff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '1.4rem' }}>
+                    {previewDoc.type === 'PDF' ? '📄' : previewDoc.type === 'SQL' ? '🗄️' : previewDoc.type === 'JSON' ? '⚙️' : '📊'}
+                  </span>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f8fafc' }}>{previewDoc.filename}</h3>
+                </div>
+                <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '4px' }}>
+                  Author: {previewDoc.author} · Department: {previewDoc.department} · Size: {previewDoc.sizeMb} MB
+                </div>
+              </div>
+              <span className={`zt-badge ${previewDoc.classification === 'Restricted' ? 'bc' : previewDoc.classification === 'Confidential' ? 'bm' : 'bl'}`}>
+                {previewDoc.classification}
+              </span>
+            </div>
+
+            <div style={{ background: 'rgba(15, 23, 42, 0.75)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#00f5ff', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Document Summary & Metadata
+              </div>
+              <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: '0 0 10px 0', lineHeight: '1.5' }}>
+                {previewDoc.summary}
+              </p>
+
+              <div style={{ fontSize: '0.75rem', color: '#00f5ff', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Preview Excerpt / Specification
+              </div>
+              <div style={{ background: 'rgba(0, 0, 0, 0.4)', padding: '0.75rem', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.75rem', color: '#a7f3d0', lineHeight: '1.6' }}>
+                {previewDoc.contentPreview.map((line, idx) => (
+                  <div key={idx} style={{ marginBottom: '4px' }}>{line}</div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '1.25rem' }}>
+              🔐 Cryptographic Stamp: sha256:{previewDoc.id.repeat(4)}... · Watermarked for: {user.name} ({user.department})
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+              <button
+                className="zt-btn zt-btn-sec"
+                onClick={() => setPreviewDoc(null)}
+              >
+                Close Preview
+              </button>
+              <button
+                className="zt-btn"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                onClick={() => {
+                  handleWorkspaceFileAccess(previewDoc);
+                  setPreviewDoc(null);
+                }}
+                disabled={actionLoading}
+              >
+                <Download size={14} /> Download File (Quota Checked)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Workspace Modal: Interactive Cloud Terminal */}
+      {showTerminalModal && (
+        <div className="zt-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div className="zt-card" style={{ maxWidth: '680px', width: '100%', padding: '1.25rem', border: '1px solid #10b981', background: '#020617' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Terminal size={18} color="#10b981" />
+                <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#10b981', fontFamily: 'monospace' }}>
+                  ZeroTrustNet Secure Cloud Shell [ztn-env-production]
+                </span>
+              </div>
+              <button
+                onClick={() => setShowTerminalModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{
+              background: '#0a0f1d',
+              padding: '1rem',
+              borderRadius: '6px',
+              border: '1px solid rgba(16, 185, 129, 0.2)',
+              minHeight: '260px',
+              maxHeight: '340px',
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              fontSize: '0.78rem',
+              color: '#34d399',
+              marginBottom: '0.85rem'
+            }}>
+              {terminalCommands.map((c, i) => (
+                <div key={i} style={{ marginBottom: '4px', color: c.type === 'input' ? '#38bdf8' : '#a7f3d0' }}>
+                  {c.text}
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleTerminalSubmit} style={{ display: 'flex', gap: '8px' }}>
+              <span style={{ color: '#10b981', fontFamily: 'monospace', lineHeight: '2.4' }}>$</span>
+              <input
+                type="text"
+                className="zt-input"
+                style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.82rem', padding: '0.45rem 0.65rem' }}
+                placeholder="Type command ('help', 'status', 'quota', 'tasks', 'whoami')..."
+                value={terminalInput}
+                onChange={(e) => setTerminalInput(e.target.value)}
+                autoFocus
+              />
+              <button type="submit" className="zt-btn" style={{ background: '#10b981', color: '#0f172a', fontWeight: 'bold' }}>
+                Run
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Workspace Modal: Sprint Details */}
+      {activeSprintModal && (
+        <div className="zt-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div className="zt-card" style={{ maxWidth: '520px', width: '100%', padding: '1.5rem', border: '1px solid #38bdf8' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f8fafc' }}>{activeSprintModal.title}</h3>
+                <div style={{ fontSize: '0.75rem', color: '#38bdf8', marginTop: '2px' }}>{activeSprintModal.sprint} · {activeSprintModal.progress}% Complete</div>
+              </div>
+              <button
+                onClick={() => setActiveSprintModal(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.5', marginBottom: '1rem' }}>
+              {activeSprintModal.desc}
+            </p>
+
+            <div style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '0.85rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Key Sprint Deliverables:
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {activeSprintModal.deliverables.map((deliv, idx) => (
+                  <div key={idx} style={{ fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#22c55e' }}>✓</span> {deliv}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="zt-btn" onClick={() => setActiveSprintModal(null)}>
+                Close Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal 1: Download Report */}
       {activeModal === 'download_report' && (
