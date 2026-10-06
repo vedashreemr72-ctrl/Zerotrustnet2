@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X } from 'lucide-react';
+import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X, UserCheck, UserPlus } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
 import { formatLocalTime, formatShortTime, formatLocalDateTime } from '../utils/timeFormat';
 
@@ -13,9 +13,10 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [mfaEvents, setMfaEvents] = useState([]);
   const [trustedDevices, setTrustedDevices] = useState([]);
   const [appeals, setAppeals] = useState([]);
+  const [regRequests, setRegRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sessions', 'employees', 'notifications', 'devices', 'mfa_events', 'appeals'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sessions', 'employees', 'notifications', 'devices', 'mfa_events', 'appeals', 'registrations'
   const [actionMsg, setActionMsg] = useState('');
   const [selectedEmployeeLoc, setSelectedEmployeeLoc] = useState(null);
 
@@ -37,7 +38,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   const fetchSOCData = async () => {
     try {
-      const [dashRes, empRes, sessRes, notifRes, devRes, liveRes, mfaRes, trustDevRes, appealRes] = await Promise.all([
+      const [dashRes, empRes, sessRes, notifRes, devRes, liveRes, mfaRes, trustDevRes, appealRes, regRes] = await Promise.all([
         fetch('/api/admin/dashboard', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/sessions', { headers: { 'Authorization': `Bearer ${token}` } }),
@@ -46,7 +47,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
         fetch('/api/admin/live-activity', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/auth/mfa-events', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/auth/trusted-devices', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/admin/appeals', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/admin/appeals', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/admin/registration-requests', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
       if (dashRes.status === 401) {
@@ -63,6 +65,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
       const mfaData = mfaRes.ok ? await parseJsonSafe(mfaRes) : [];
       const trustDevData = trustDevRes.ok ? await parseJsonSafe(trustDevRes) : [];
       const appealData = appealRes.ok ? await parseJsonSafe(appealRes) : [];
+      const regData = regRes.ok ? await parseJsonSafe(regRes) : [];
 
       if (!dashRes.ok) {
         if (dashData.error === 'Invalid token' && onLogout) {
@@ -81,6 +84,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
       setMfaEvents(mfaData || []);
       setTrustedDevices(trustDevData || []);
       setAppeals(appealData || []);
+      setRegRequests(regData || []);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -226,6 +230,26 @@ export default function AdminDashboard({ token, user, onLogout }) {
       fetchSOCData();
     } catch (err) {
       alert(`Appeal Action Error: ${err.message}`);
+    }
+  };
+
+  const handleRegistrationAction = async (userId, action, notes = '') => {
+    try {
+      const res = await fetch(`/api/admin/registration-requests/${userId}/action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ action, notes })
+      });
+      const resData = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(resData.error || 'Failed to update registration status');
+      setActionMsg(`✅ ${resData.message}`);
+      setTimeout(() => setActionMsg(''), 4500);
+      fetchSOCData();
+    } catch (err) {
+      alert(`Registration Action Error: ${err.message}`);
     }
   };
 
@@ -384,8 +408,23 @@ export default function AdminDashboard({ token, user, onLogout }) {
           <button className={`zt-btn ${activeTab === 'sessions' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('sessions')}>
             <Activity size={15} /> Active Sessions ({sessions.filter(s => s.is_active).length})
           </button>
-          <button className={`zt-btn ${activeTab === 'employees' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('employees')}>
-            <Users size={15} /> Employees & User Management
+          <button 
+            className={`zt-btn ${activeTab === 'employees' ? '' : 'zt-btn-sec'}`} 
+            onClick={() => setActiveTab('employees')}
+            style={regRequests.filter(r => r.approval_status === 'Pending').length > 0 ? { borderColor: '#eab308' } : {}}
+          >
+            <Users size={15} /> Employees & User Management {regRequests.filter(r => r.approval_status === 'Pending').length > 0 && (
+              <span style={{ background: '#eab308', color: '#000', padding: '1px 6px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: 'bold' }}>
+                {regRequests.filter(r => r.approval_status === 'Pending').length} Pending
+              </span>
+            )}
+          </button>
+          <button 
+            className={`zt-btn ${activeTab === 'registrations' ? '' : 'zt-btn-sec'}`} 
+            onClick={() => setActiveTab('registrations')}
+            style={regRequests.filter(r => r.approval_status === 'Pending').length > 0 ? { borderColor: '#eab308', color: '#eab308', fontWeight: 'bold' } : {}}
+          >
+            <UserCheck size={15} /> Registration Requests ({regRequests.filter(r => r.approval_status === 'Pending').length} Pending)
           </button>
           <button className={`zt-btn ${activeTab === 'notifications' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('notifications')}>
             <PhoneCall size={15} /> SMS & Email Dispatches ({notifications.length})
@@ -721,6 +760,84 @@ export default function AdminDashboard({ token, user, onLogout }) {
           <div className="zt-section-title">
             <Users size={18} /> Monitored Employees & Automated Account Lockout Control
           </div>
+
+          {/* Pending Registration Requests Alert Card */}
+          {regRequests.filter(r => r.approval_status === 'Pending').length > 0 && (
+            <div className="zt-card" style={{
+              background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.12), rgba(202, 138, 4, 0.05))',
+              border: '1.5px solid #eab308',
+              borderRadius: '10px',
+              padding: '1.25rem',
+              marginBottom: '1.25rem',
+              boxShadow: '0 0 20px rgba(234, 179, 8, 0.2)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <UserPlus size={20} color="#eab308" />
+                  <div>
+                    <strong style={{ color: '#fbbf24', fontSize: '0.95rem' }}>
+                      ⏳ Pending Employee Registration Requests ({regRequests.filter(r => r.approval_status === 'Pending').length})
+                    </strong>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                      Zero Trust Access Control: Newly registered employees cannot log in until you accept their registration request.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table className="zt-table" style={{ width: '100%', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Employee Name</th>
+                      <th>Username</th>
+                      <th>Department & Scope</th>
+                      <th>Registered Device</th>
+                      <th>Location</th>
+                      <th>Requested At</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regRequests.filter(r => r.approval_status === 'Pending').map((req) => (
+                      <tr key={req.id}>
+                        <td style={{ fontWeight: 'bold', color: '#e2e8f0' }}>{req.name}</td>
+                        <td style={{ fontFamily: 'monospace', color: '#00f5ff' }}>@{req.username}</td>
+                        <td>{req.department} · {req.emp_type}</td>
+                        <td style={{ color: '#94a3b8' }}>{req.device}</td>
+                        <td style={{ color: '#38bdf8' }}>{req.location}</td>
+                        <td style={{ color: '#fbbf24', fontSize: '0.72rem' }}>{formatLocalDateTime(req.created_at)}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              className="zt-btn"
+                              style={{ background: '#10b981', color: '#000', padding: '0.3rem 0.65rem', fontSize: '0.74rem', fontWeight: 'bold' }}
+                              onClick={() => handleRegistrationAction(req.id, 'approve')}
+                              title="Accept registration and activate account"
+                            >
+                              ✓ Accept & Activate
+                            </button>
+                            <button
+                              className="zt-btn"
+                              style={{ background: '#ef4444', color: '#fff', padding: '0.3rem 0.65rem', fontSize: '0.74rem' }}
+                              onClick={() => {
+                                const reason = prompt('Optional rejection note:', 'Registration not authorized');
+                                if (reason !== null) handleRegistrationAction(req.id, 'reject', reason);
+                              }}
+                              title="Reject registration request"
+                            >
+                              ✕ Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="zt-card">
             <div className="zt-table-container">
               <table className="zt-table">
@@ -733,7 +850,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                     <th>Live Geolocation & Baseline</th>
                     <th>Risk Score</th>
                     <th>Insider Threat Classification</th>
-                    <th>Account Lock Status</th>
+                    <th>Registration & Lock Status</th>
                     <th>SOC Actions</th>
                   </tr>
                 </thead>
@@ -788,12 +905,32 @@ export default function AdminDashboard({ token, user, onLogout }) {
                           </span>
                         </td>
                         <td>
-                          <span className={`zt-badge ${isLocked ? 'bc' : 'bl'}`}>
-                            {isLocked ? '🔒 Account Locked' : '🟢 Active & Active'}
-                          </span>
+                          {emp.approval_status === 'Pending' ? (
+                            <span className="zt-badge" style={{ background: 'rgba(234, 179, 8, 0.2)', color: '#fbbf24', border: '1px solid #eab308' }}>
+                              ⏳ Pending Approval
+                            </span>
+                          ) : emp.approval_status === 'Rejected' ? (
+                            <span className="zt-badge bc">
+                              ❌ Registration Rejected
+                            </span>
+                          ) : (
+                            <span className={`zt-badge ${isLocked ? 'bc' : 'bl'}`}>
+                              {isLocked ? '🔒 Account Locked' : '🟢 Approved & Active'}
+                            </span>
+                          )}
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                            {emp.approval_status === 'Pending' && (
+                              <button 
+                                className="zt-btn" 
+                                style={{ background: '#10b981', color: '#000', padding: '0.25rem 0.6rem', fontSize: '0.72rem', fontWeight: 'bold' }}
+                                onClick={() => handleRegistrationAction(emp.id, 'approve')}
+                                title="Accept registration request and activate employee account"
+                              >
+                                ✓ Accept
+                              </button>
+                            )}
                             <button 
                               className="zt-btn" 
                               style={{ background: isLocked ? '#10b981' : '#ef4444', padding: '0.25rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -1193,6 +1330,124 @@ export default function AdminDashboard({ token, user, onLogout }) {
                                 }
                               }}
                               title="Reject access extension request"
+                            >
+                              ✕ Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Completed</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Registration Requests Tab */}
+      {activeTab === 'registrations' && (
+        <div className="zt-card" style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#00f5ff' }}>
+                👥 Employee Registration Requests & Access Approvals
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                Zero Trust Onboarding Policy: New employees must be explicitly accepted by the System Administrator before credentials can be used to log in.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(251, 191, 36, 0.12)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(251, 191, 36, 0.3)', fontWeight: 'bold' }}>
+                ⏳ {regRequests.filter(r => r.approval_status === 'Pending').length} Pending Acceptance
+              </span>
+              <button className="zt-btn" style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem' }} onClick={fetchSOCData}>
+                🔄 Refresh
+              </button>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="zt-table" style={{ width: '100%', fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th>Employee Name</th>
+                  <th>Username / Email</th>
+                  <th>Department & Role</th>
+                  <th>Registered Device</th>
+                  <th>Registered Location</th>
+                  <th>Registration Date</th>
+                  <th>Approval Status</th>
+                  <th>Review Details</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {regRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" style={{ textAlign: 'center', color: '#64748b', padding: '1.5rem' }}>
+                      No registration requests recorded.
+                    </td>
+                  </tr>
+                ) : (
+                  regRequests.map((req) => (
+                    <tr key={req.id} style={{ background: req.approval_status === 'Pending' ? 'rgba(234, 179, 8, 0.05)' : 'transparent' }}>
+                      <td style={{ fontWeight: 'bold', color: '#e2e8f0' }}>{req.name}</td>
+                      <td>
+                        <div style={{ fontFamily: 'monospace', color: '#00f5ff' }}>@{req.username}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{req.email}</div>
+                      </td>
+                      <td>
+                        <span style={{ color: '#38bdf8' }}>{req.department}</span>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{req.emp_type}</div>
+                      </td>
+                      <td style={{ color: '#94a3b8' }}>{req.device}</td>
+                      <td style={{ color: '#38bdf8' }}>{req.location}</td>
+                      <td style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{formatLocalDateTime(req.created_at)}</td>
+                      <td>
+                        <span style={{
+                          padding: '0.25rem 0.6rem',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          fontWeight: 'bold',
+                          background: req.approval_status === 'Approved' ? 'rgba(34, 197, 94, 0.15)' : req.approval_status === 'Rejected' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                          color: req.approval_status === 'Approved' ? '#22c55e' : req.approval_status === 'Rejected' ? '#ef4444' : '#eab308',
+                          border: `1px solid ${req.approval_status === 'Approved' ? 'rgba(34, 197, 94, 0.4)' : req.approval_status === 'Rejected' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(234, 179, 8, 0.4)'}`
+                        }}>
+                          {req.approval_status === 'Pending' ? '⏳ Pending Approval' : req.approval_status === 'Approved' ? '✓ Approved' : '✕ Rejected'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                        {req.reviewed_at ? (
+                          <div>
+                            <div>By: <strong style={{ color: '#e2e8f0' }}>{req.reviewed_by}</strong></div>
+                            <div style={{ color: '#64748b' }}>{formatLocalDateTime(req.reviewed_at)}</div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#64748b', fontStyle: 'italic' }}>Pending review</span>
+                        )}
+                      </td>
+                      <td>
+                        {req.approval_status === 'Pending' ? (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              className="zt-btn"
+                              style={{ background: '#10b981', color: '#000', padding: '0.3rem 0.65rem', fontSize: '0.74rem', fontWeight: 'bold' }}
+                              onClick={() => handleRegistrationAction(req.id, 'approve')}
+                              title="Accept registration and activate account"
+                            >
+                              ✓ Accept
+                            </button>
+                            <button
+                              className="zt-btn"
+                              style={{ background: '#ef4444', color: '#fff', padding: '0.3rem 0.65rem', fontSize: '0.74rem' }}
+                              onClick={() => {
+                                const reason = prompt('Optional rejection note:', 'Registration not authorized');
+                                if (reason !== null) handleRegistrationAction(req.id, 'reject', reason);
+                              }}
+                              title="Reject registration request"
                             >
                               ✕ Reject
                             </button>

@@ -297,6 +297,26 @@ def init_db():
         admin_notes      TEXT DEFAULT ''
     )""")
 
+    # Ensure missing users columns exist for registration approval workflow
+    c.execute("PRAGMA table_info(users)")
+    existing_user_cols = [col[1] for col in c.fetchall()]
+    if 'approval_status' not in existing_user_cols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN approval_status TEXT DEFAULT 'Approved'")
+        except Exception:
+            pass
+    if 'reviewed_at' not in existing_user_cols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN reviewed_at TEXT")
+        except Exception:
+            pass
+    if 'reviewed_by' not in existing_user_cols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN reviewed_by TEXT")
+        except Exception:
+            pass
+    c.execute("UPDATE users SET approval_status='Approved' WHERE approval_status IS NULL")
+
     c.execute("""CREATE TABLE IF NOT EXISTS extracted_archives (
         id             TEXT PRIMARY KEY,
         user_id        TEXT NOT NULL,
@@ -584,7 +604,9 @@ def load_all_evaluated():
     conn = get_conn()
     c = conn.cursor()
     c.execute("""
-        SELECT u.id, u.username, u.name, u.department, u.emp_type, b.*
+        SELECT u.id, u.username, u.name, u.department, u.emp_type, u.is_active,
+               COALESCE(u.approval_status, 'Approved') as approval_status,
+               u.created_at, u.reviewed_at, u.reviewed_by, b.*
         FROM users u
         LEFT JOIN behavior_data b ON b.user_id = u.id
         WHERE u.role='employee'
@@ -814,9 +836,9 @@ def api_register():
 
     reg_location = data.get("location", "").strip() or "Bengaluru, India"
 
-    c.execute("""INSERT INTO users (id, username, pwd_hash, name, department, emp_type, role, is_active, created_at, phone)
-                 VALUES (?,?,?,?,?,?,?,?,?,?)""",
-              (uid, username, hash_pwd(password), name, dept, emp_type, "employee", 1, now_str, phone))
+    c.execute("""INSERT INTO users (id, username, pwd_hash, name, department, emp_type, role, is_active, created_at, phone, approval_status)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+              (uid, username, hash_pwd(password), name, dept, emp_type, "employee", 0, now_str, phone, "Pending"))
 
     c.execute("""INSERT OR IGNORE INTO behavior_data VALUES
         (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -824,15 +846,30 @@ def api_register():
          0, "", 0, "", 0, "", 0, "", 0, "", 0, "", 0, "", 5, 5, 5,
          "09:00", device_name, reg_location, 15, dept, dept, 0, "None", 0))
 
+    # Dispatch notification for SOC Administrator review
+    notif_id = str(uuid.uuid4())
+    c.execute("""
+        INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        notif_id, uid, username, "Security SOC", "admin",
+        f"New Registration Request: {name} (@{username})",
+        f"A new employee '{name}' ({dept}) has registered from device '{device_name}' in {reg_location}. System Administrator acceptance is required before this account can access the portal.",
+        "High", now_str, "Dispatched", 0
+    ))
+
     conn.commit()
     conn.close()
     invalidate_eval_cache()
 
-    log_audit(uid, username, name, dept, "Employee Registered", f"Account registered for employee '{name}' ({dept}) from device {device_name} in {reg_location}", "127.0.0.1", device_name, 0, 0)
+    log_audit(uid, username, name, dept, "Employee Registration Pending",
+              f"New registration submitted for employee '{name}' ({dept}) from device '{device_name}' in {reg_location}. Awaiting admin acceptance.",
+              "127.0.0.1", device_name, 0, 0)
 
     return jsonify({
         "success": True,
-        "message": f"Employee '{name}' registered successfully! You can now log in."
+        "pending_approval": True,
+        "message": f"Registration request submitted successfully for '{name}'! Your account is pending administrator approval. Once accepted by the System Administrator, you will be able to log in with your credentials."
     })
 
 def update_user_session_telemetry(conn, uid, client_location, device_known=None):
@@ -958,7 +995,8 @@ def api_login():
     conn = get_conn()
     c = conn.cursor()
     c.execute("""
-        SELECT id, name, department, emp_type, role, is_active, username, email, phone
+        SELECT id, name, department, emp_type, role, is_active, username, email, phone,
+               COALESCE(approval_status, 'Approved') as approval_status
         FROM users
         WHERE (LOWER(username)=? OR LOWER(email)=?) AND pwd_hash=?
     """, (login_id, login_id, hash_pwd(password)))
@@ -973,7 +1011,32 @@ def api_login():
                   client_ip, client_browser, risk_contrib=20, is_suspicious=1)
         return jsonify({"error": "Invalid username/email or password"}), 401
 
-    uid, name, dept, emp_type, urole, is_active, real_uname, user_email, user_phone = row
+    uid, name, dept, emp_type, urole, is_active, real_uname, user_email, user_phone, app_status = row
+
+    if app_status == "Pending":
+        conn.close()
+        client_ip = data.get("ip_addr") or request.remote_addr or "127.0.0.1"
+        client_browser = data.get("browser") or request.headers.get("User-Agent", "Web Client")
+        log_audit(uid, real_uname, name, dept, "Pending Registration Login Attempt",
+                  f"Unapproved employee account '{real_uname}' attempted login before administrator accepted registration.",
+                  client_ip, client_browser, risk_contrib=5, is_suspicious=0)
+        return jsonify({
+            "error": "Your registration request is pending administrator approval. The System Administrator must accept your registration before you can log in.",
+            "pending_approval": True
+        }), 403
+
+    if app_status == "Rejected":
+        conn.close()
+        client_ip = data.get("ip_addr") or request.remote_addr or "127.0.0.1"
+        client_browser = data.get("browser") or request.headers.get("User-Agent", "Web Client")
+        log_audit(uid, real_uname, name, dept, "Rejected Registration Login Attempt",
+                  f"Rejected employee account '{real_uname}' attempted login.",
+                  client_ip, client_browser, risk_contrib=15, is_suspicious=1)
+        return jsonify({
+            "error": "Your registration request was rejected by the System Administrator. Access is denied.",
+            "rejected": True
+        }), 403
+
     if not is_active:
         conn.close()
         client_ip = data.get("ip_addr") or request.remote_addr or "127.0.0.1"
@@ -3276,6 +3339,122 @@ def admin_employees_list():
         return jsonify([])
     return jsonify(df.to_dict(orient='records'))
 
+@app.route('/api/admin/registration-requests', methods=['GET'])
+def admin_registration_requests():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            return jsonify({"error": "Admin privileges required"}), 403
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT u.id, u.username, u.name, u.department, u.emp_type, u.phone, u.email,
+               u.is_active, COALESCE(u.approval_status, 'Approved') as approval_status,
+               u.created_at, u.reviewed_at, u.reviewed_by,
+               b.current_login_location, b.baseline_device
+        FROM users u
+        LEFT JOIN behavior_data b ON b.user_id = u.id
+        WHERE u.role = 'employee'
+        ORDER BY 
+            CASE WHEN COALESCE(u.approval_status, 'Approved') = 'Pending' THEN 0 ELSE 1 END,
+            u.created_at DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    result = []
+    for r in rows:
+        result.append({
+            "id": r[0],
+            "username": r[1],
+            "name": r[2],
+            "department": r[3],
+            "emp_type": r[4],
+            "phone": r[5] or "N/A",
+            "email": r[6] or f"{r[1]}@zerotrustnet.io",
+            "is_active": bool(r[7]),
+            "approval_status": r[8],
+            "created_at": r[9],
+            "reviewed_at": r[10],
+            "reviewed_by": r[11],
+            "location": r[12] or "Office",
+            "device": r[13] or "Corporate Laptop"
+        })
+    return jsonify(result)
+
+@app.route('/api/admin/registration-requests/<user_id>/action', methods=['POST'])
+def admin_registration_action(user_id):
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            return jsonify({"error": "Admin privileges required"}), 403
+        admin_uname = payload.get("username", "admin")
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    req_data = request.json or {}
+    action = req_data.get("action", "").lower()
+    notes = req_data.get("notes", "").strip()
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id, username, name, department, role FROM users WHERE id=?", (user_id,))
+    user_row = c.fetchone()
+    if not user_row:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+
+    uid, username, name, dept, urole = user_row
+    now_str = datetime.now().isoformat()
+
+    if action in ["approve", "accept"]:
+        c.execute("""
+            UPDATE users 
+            SET approval_status='Approved', is_active=1, reviewed_at=?, reviewed_by=?
+            WHERE id=?
+        """, (now_str, admin_uname, uid))
+        conn.commit()
+        conn.close()
+        invalidate_eval_cache()
+
+        log_audit(uid, username, name, dept, "Registration Accepted",
+                  f"Admin '{admin_uname}' accepted registration request for employee '{name}' (@{username}). Account is now activated.",
+                  "127.0.0.1", "Admin Console", 0, 0)
+
+        return jsonify({
+            "success": True,
+            "status": "Approved",
+            "message": f"Registration request for '{name}' (@{username}) has been accepted. Employee can now log in!"
+        })
+
+    elif action == "reject":
+        c.execute("""
+            UPDATE users 
+            SET approval_status='Rejected', is_active=0, reviewed_at=?, reviewed_by=?
+            WHERE id=?
+        """, (now_str, admin_uname, uid))
+        conn.commit()
+        conn.close()
+        invalidate_eval_cache()
+
+        log_audit(uid, username, name, dept, "Registration Rejected",
+                  f"Admin '{admin_uname}' rejected registration request for '{name}' (@{username}). Note: {notes or 'No reason provided'}",
+                  "127.0.0.1", "Admin Console", 15, 1)
+
+        return jsonify({
+            "success": True,
+            "status": "Rejected",
+            "message": f"Registration request for '{name}' (@{username}) was rejected."
+        })
+    else:
+        conn.close()
+        return jsonify({"error": "Invalid action. Must be 'approve' or 'reject'."}), 400
+
 @app.route('/api/admin/reset-system', methods=['POST'])
 def admin_reset_system():
     conn = get_conn()
@@ -3308,7 +3487,7 @@ def api_mfa_step1():
 
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT id, name, department, emp_type, role, is_active FROM users WHERE username=? AND pwd_hash=?",
+    c.execute("SELECT id, name, department, emp_type, role, is_active, COALESCE(approval_status, 'Approved') FROM users WHERE username=? AND pwd_hash=?",
               (username, hash_pwd(password)))
     row = c.fetchone()
     conn.close()
@@ -3316,7 +3495,17 @@ def api_mfa_step1():
     if not row:
         return jsonify({"error": "Invalid username or password"}), 401
 
-    uid, name, dept, emp_type, urole, is_active = row
+    uid, name, dept, emp_type, urole, is_active, app_status = row
+    if app_status == "Pending":
+        return jsonify({
+            "error": "Your registration request is pending administrator approval. The System Administrator must accept your registration before you can log in.",
+            "pending_approval": True
+        }), 403
+    if app_status == "Rejected":
+        return jsonify({
+            "error": "Your registration request was rejected by the System Administrator. Access is denied.",
+            "rejected": True
+        }), 403
     if not is_active:
         return jsonify({"error": "Account is locked or disabled due to security policy"}), 403
 

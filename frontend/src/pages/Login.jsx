@@ -122,6 +122,12 @@ export default function Login({
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.pending_approval) {
+          throw new Error(`⏳ Registration Pending Approval: ${data.error}`);
+        }
+        if (data.rejected) {
+          throw new Error(`⛔ Registration Rejected: ${data.error}`);
+        }
         throw new Error(data.error || 'Authentication failed');
       }
 
@@ -166,7 +172,11 @@ export default function Login({
         throw new Error(data.error || 'Registration failed');
       }
 
-      setSuccessMsg(`✅ ${data.message}`);
+      if (data.pending_approval) {
+        setSuccessMsg(`⏳ ${data.message}`);
+      } else {
+        setSuccessMsg(`✅ ${data.message}`);
+      }
       setLoginIdentifier(regUsername);
       setPassword(regPassword);
       setMode('login');
@@ -322,16 +332,17 @@ export default function Login({
 
         {error && (
           <div style={{
-            background: 'rgba(239, 68, 68, 0.12)',
-            border: '1px solid #ef4444',
+            background: error.includes('Pending') || error.includes('pending') ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.12)',
+            border: `1px solid ${error.includes('Pending') || error.includes('pending') ? '#eab308' : '#ef4444'}`,
             borderRadius: '8px',
             padding: '0.75rem',
             marginBottom: '1rem',
-            color: '#ef4444',
+            color: error.includes('Pending') || error.includes('pending') ? '#fbbf24' : '#ef4444',
             fontSize: '0.82rem',
-            fontWeight: '600'
+            fontWeight: '600',
+            lineHeight: '1.45'
           }}>
-            ❌ {error}
+            {error.startsWith('⏳') || error.startsWith('⛔') ? error : `❌ ${error}`}
           </div>
         )}
 
