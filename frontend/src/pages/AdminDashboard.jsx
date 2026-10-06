@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink } from 'lucide-react';
+import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
 
 export default function AdminDashboard({ token, user, onLogout }) {
@@ -15,6 +15,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sessions', 'employees', 'notifications', 'devices', 'mfa_events'
   const [actionMsg, setActionMsg] = useState('');
+  const [selectedEmployeeLoc, setSelectedEmployeeLoc] = useState(null);
 
   // Step-Up MFA Modal state
   const [stepUpModalOpen, setStepUpModalOpen] = useState(false);
@@ -359,7 +360,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
             <Activity size={15} /> Active Sessions ({sessions.filter(s => s.is_active).length})
           </button>
           <button className={`zt-btn ${activeTab === 'employees' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('employees')}>
-            <Users size={15} /> User Management & Lockout
+            <Users size={15} /> Employees & User Management
           </button>
           <button className={`zt-btn ${activeTab === 'notifications' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('notifications')}>
             <PhoneCall size={15} /> SMS & Email Dispatches ({notifications.length})
@@ -697,21 +698,55 @@ export default function AdminDashboard({ token, user, onLogout }) {
                     <th>Username</th>
                     <th>Department</th>
                     <th>Role Scope</th>
+                    <th>Live Geolocation & Baseline</th>
                     <th>Risk Score</th>
                     <th>Insider Threat Classification</th>
                     <th>Account Lock Status</th>
-                    <th>SOC Lockout Override</th>
+                    <th>SOC Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {employees.map((emp, idx) => {
                     const isLocked = emp.is_active === 0;
+                    const curLoc = emp.current_login_location || 'Office Workstation';
+                    const baseLoc = emp.baseline_location || 'Bengaluru';
+                    const isMismatch = curLoc && baseLoc && 
+                      !curLoc.toLowerCase().includes(baseLoc.toLowerCase()) && 
+                      !baseLoc.toLowerCase().includes(curLoc.toLowerCase());
+                    const isImpossible = emp.impossible_travel_flag === 1;
+
                     return (
                       <tr key={idx}>
                         <td style={{ fontWeight: 'bold' }}>{emp.name}</td>
                         <td style={{ fontFamily: 'monospace', color: '#00f5ff' }}>{emp.username}</td>
                         <td>{emp.department}</td>
                         <td>{emp.emp_type}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <MapPin size={13} color="#00f5ff" style={{ flexShrink: 0 }} />
+                            <span style={{ fontWeight: '600', color: isMismatch ? '#f59e0b' : '#38bdf8', fontSize: '0.8rem' }}>
+                              {curLoc}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px' }}>
+                            Baseline: <strong style={{ color: '#cbd5e1' }}>{baseLoc}</strong>
+                          </div>
+                          <div style={{ marginTop: '3px' }}>
+                            {isImpossible ? (
+                              <span className="zt-badge bc" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                                🚨 Impossible Travel
+                              </span>
+                            ) : isMismatch ? (
+                              <span className="zt-badge bm" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                                ⚠️ Geo Deviation
+                              </span>
+                            ) : (
+                              <span className="zt-badge bl" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                                ✓ Baseline Match
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td style={{ fontWeight: 'bold', color: emp.risk_score >= 80 ? '#ef4444' : emp.risk_score >= 30 ? '#f59e0b' : '#10b981' }}>
                           {emp.risk_score}/100
                         </td>
@@ -726,18 +761,29 @@ export default function AdminDashboard({ token, user, onLogout }) {
                           </span>
                         </td>
                         <td>
-                          <button 
-                            className="zt-btn" 
-                            style={{ background: isLocked ? '#10b981' : '#ef4444', padding: '0.25rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            onClick={() => triggerStepUp({
-                              type: 'toggle_lock',
-                              payload: { userId: emp.id, employeeName: emp.name },
-                              title: `${isLocked ? 'Unlock' : 'Lock'} account for ${emp.name}`
-                            })}
-                          >
-                            {isLocked ? <Unlock size={12} /> : <Lock size={12} />}
-                            {isLocked ? 'Unlock Account' : 'Lock Account'}
-                          </button>
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                            <button 
+                              className="zt-btn" 
+                              style={{ background: isLocked ? '#10b981' : '#ef4444', padding: '0.25rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => triggerStepUp({
+                                type: 'toggle_lock',
+                                payload: { userId: emp.id, employeeName: emp.name },
+                                title: `${isLocked ? 'Unlock' : 'Lock'} account for ${emp.name}`
+                              })}
+                            >
+                              {isLocked ? <Unlock size={12} /> : <Lock size={12} />}
+                              {isLocked ? 'Unlock' : 'Lock'}
+                            </button>
+                            <button
+                              className="zt-btn zt-btn-sec"
+                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => setSelectedEmployeeLoc(emp)}
+                              title="Inspect Geolocation Details"
+                            >
+                              <Globe size={12} color="#00f5ff" />
+                              Location Intel
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1161,6 +1207,95 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Employee Geolocation Forensic Intel Modal */}
+      {selectedEmployeeLoc && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(5, 10, 20, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1050,
+          padding: '1rem'
+        }}>
+          <div className="zt-card" style={{
+            width: '100%',
+            maxWidth: '620px',
+            border: '1px solid #00f5ff',
+            boxShadow: '0 0 30px rgba(0, 245, 255, 0.25)',
+            position: 'relative',
+            background: '#0d1527',
+            borderRadius: '10px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 245, 255, 0.15)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Globe size={20} color="#00f5ff" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#00f5ff', fontWeight: 'bold' }}>
+                  Geolocation Telemetry: {selectedEmployeeLoc.name}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setSelectedEmployeeLoc(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', marginBottom: '1.2rem' }}>
+              <div style={{ background: 'rgba(0, 245, 255, 0.04)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(0, 245, 255, 0.15)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Current Active Location</div>
+                <div style={{ color: '#00f5ff', fontWeight: 'bold', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <MapPin size={14} />
+                  <span>{selectedEmployeeLoc.current_login_location || 'Office Workstation'}</span>
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Registered Baseline Location</div>
+                <div style={{ color: '#cbd5e1', fontWeight: 'bold', fontSize: '0.88rem' }}>
+                  {selectedEmployeeLoc.baseline_location || 'Bengaluru'}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Previous Known Location</div>
+                <div style={{ color: '#cbd5e1', fontWeight: 'bold', fontSize: '0.88rem' }}>
+                  {selectedEmployeeLoc.last_login_location || 'Office'}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Registered Hardware Endpoint</div>
+                <div style={{ color: '#a7f3d0', fontFamily: 'monospace', fontSize: '0.82rem' }}>
+                  {selectedEmployeeLoc.baseline_device || 'Corporate Laptop'}
+                </div>
+              </div>
+            </div>
+
+            {selectedEmployeeLoc.impossible_travel_details && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', color: '#fca5a5', fontSize: '0.8rem' }}>
+                <strong>🚨 Impossible Travel Flag:</strong> {selectedEmployeeLoc.impossible_travel_details}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button 
+                className="zt-btn zt-btn-sec"
+                onClick={() => setSelectedEmployeeLoc(null)}
+                style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -23,3 +23,6 @@ backend/.env
 frontend/.env
 !.env.example
 !*.env.example
+
+# Uploads
+backend/uploads/

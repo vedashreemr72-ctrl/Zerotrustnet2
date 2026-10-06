@@ -12,7 +12,7 @@ export default function NotificationCenter({ token, theme: propTheme }) {
 
   // Theme synchronization (responsive to prop, data-theme attribute on root, and localStorage)
   const [currentTheme, setCurrentTheme] = useState(() => {
-    return propTheme || document.documentElement.getAttribute('data-theme') || localStorage.getItem('ztn_theme') || 'dark';
+    return propTheme || (typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null) || localStorage.getItem('ztn_theme') || 'dark';
   });
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export default function NotificationCenter({ token, theme: propTheme }) {
 
   useEffect(() => {
     const updateTheme = () => {
-      const active = document.documentElement.getAttribute('data-theme') || localStorage.getItem('ztn_theme') || 'dark';
+      const active = (typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null) || localStorage.getItem('ztn_theme') || 'dark';
       setCurrentTheme(active);
     };
     updateTheme();
@@ -36,7 +36,10 @@ export default function NotificationCenter({ token, theme: propTheme }) {
     };
   }, []);
 
-  const isLight = currentTheme === 'light';
+  const isLight = propTheme === 'light' || 
+                  currentTheme === 'light' || 
+                  (typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light') || 
+                  (typeof localStorage !== 'undefined' && localStorage.getItem('ztn_theme') === 'light');
 
   const knownIdsRef = useRef(new Set());
   const initialLoadDoneRef = useRef(false);
@@ -407,7 +410,9 @@ export default function NotificationCenter({ token, theme: propTheme }) {
 
         {/* 📋 SLIDEOUT / DROPDOWN NOTIFICATION DRAWER */}
         {isOpen && (
-          <div style={{
+          <div 
+            className="ztn-notification-drawer"
+            style={{
             position: 'absolute',
             top: '42px',
             right: 0,
@@ -601,6 +606,7 @@ export default function NotificationCenter({ token, theme: propTheme }) {
                   return (
                     <div
                       key={n.id}
+                      className={`ztn-notification-item ${n.is_read ? 'is-read' : 'is-unread'}`}
                       onClick={() => !n.is_read && markAsRead(n.id)}
                       style={{
                         background: n.is_read
@@ -685,25 +691,30 @@ export default function NotificationCenter({ token, theme: propTheme }) {
         pointerEvents: 'none'
       }}>
         {toasts.map((toast) => {
-          const style = getSeverityStyle(toast.severity, isLight);
+          const docTheme = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null;
+          const isToastLight = propTheme === 'light' || currentTheme === 'light' || docTheme === 'light' || (typeof localStorage !== 'undefined' && localStorage.getItem('ztn_theme') === 'light');
+          const style = getSeverityStyle(toast.severity, isToastLight);
+          const sevClass = (toast.severity || 'low').toLowerCase();
+
           return (
             <div
               key={toast.id}
+              className="ztn-toast"
               style={{
                 pointerEvents: 'auto',
                 width: '360px',
                 maxWidth: '90vw',
-                background: isLight
+                background: isToastLight
                   ? '#ffffff'
                   : 'linear-gradient(135deg, rgba(13, 27, 62, 0.95), rgba(3, 9, 30, 0.98))',
-                border: `1px solid ${isLight ? '#cbd5e1' : style.border}`,
+                border: `1px solid ${isToastLight ? '#cbd5e1' : style.border}`,
                 borderLeft: `4px solid ${style.color}`,
-                boxShadow: isLight
+                boxShadow: isToastLight
                   ? '0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04)'
                   : `0 8px 30px rgba(0,0,0,0.6), 0 0 15px ${style.border}`,
                 borderRadius: '10px',
                 padding: '0.85rem 1rem',
-                color: isLight ? '#0f172a' : '#f1f5f9',
+                color: isToastLight ? '#0f172a' : '#f1f5f9',
                 display: 'flex',
                 gap: '10px',
                 animation: 'slideInRight 0.3s ease-out',
@@ -717,18 +728,20 @@ export default function NotificationCenter({ token, theme: propTheme }) {
 
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.84rem', color: style.color, letterSpacing: '0.3px' }}>
+                  <span className={`ztn-toast-title ${sevClass}`} style={{ fontWeight: 700, fontSize: '0.84rem', color: isToastLight ? (toast.severity === 'Low' ? '#0284c7' : style.color) : style.color, letterSpacing: '0.3px' }}>
                     {toast.severity.toUpperCase()} EVENT DETECTED
                   </span>
                   <button
                     onClick={() => dismissToast(toast.id)}
+                    className="ztn-toast-dismiss"
                     title="Dismiss notification"
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      color: isLight ? '#64748b' : '#94a3b8',
+                      color: isToastLight ? '#64748b' : '#94a3b8',
                       cursor: 'pointer',
                       padding: '2px',
+                      borderRadius: '4px',
                       display: 'flex',
                       alignItems: 'center'
                     }}
@@ -737,16 +750,16 @@ export default function NotificationCenter({ token, theme: propTheme }) {
                   </button>
                 </div>
 
-                <div style={{ fontWeight: 600, fontSize: '0.82rem', color: isLight ? '#0f172a' : '#e2e8f0', marginBottom: '3px' }}>
+                <div className="ztn-toast-subject" style={{ fontWeight: 600, fontSize: '0.82rem', color: isToastLight ? '#0f172a' : '#e2e8f0', marginBottom: '3px' }}>
                   {toast.subject}
                 </div>
 
-                <div style={{ fontSize: '0.74rem', color: isLight ? '#334155' : '#94a3b8', lineHeight: '1.35' }}>
+                <div className="ztn-toast-msg" style={{ fontSize: '0.74rem', color: isToastLight ? '#334155' : '#94a3b8', lineHeight: '1.35' }}>
                   {toast.message}
                 </div>
 
-                <div style={{ marginTop: '6px', fontSize: '0.67rem', color: isLight ? '#64748b' : '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>User: <strong style={{ color: isLight ? '#1e293b' : '#cbd5e1' }}>{toast.username}</strong></span>
+                <div className="ztn-toast-footer" style={{ marginTop: '6px', fontSize: '0.67rem', color: isToastLight ? '#64748b' : '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>User: <strong style={{ color: isToastLight ? '#1e293b' : '#cbd5e1' }}>{toast.username}</strong></span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                     <Clock size={10} /> {formatToastTime(toast.sent_at || toast.timestamp)}
                   </span>

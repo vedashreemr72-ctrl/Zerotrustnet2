@@ -59,14 +59,22 @@ export default function Login({
   const [trustDevice, setTrustDevice] = useState(true);
 
   // Simulation & telemetry toggles
-  const [simLocation, setSimLocation] = useState('Detecting location...');
+  const [simLocation, setSimLocation] = useState(() => {
+    try {
+      return localStorage.getItem('ztn_last_location') || 'Detecting location...';
+    } catch {
+      return 'Detecting location...';
+    }
+  });
   const [simDeviceId, setSimDeviceId] = useState(getDeviceId());
 
   // Automatically fetch genuine real-time physical address on load
   useEffect(() => {
     fetchRealTimeLocation().then((loc) => {
       if (loc && (loc.address || loc.shortLocation)) {
-        setSimLocation(loc.shortLocation || loc.address);
+        const resolved = loc.shortLocation || loc.address;
+        setSimLocation(resolved);
+        try { localStorage.setItem('ztn_last_location', resolved); } catch {}
       }
     }).catch((err) => {
       console.warn('Real-time location detection fallback:', err);
@@ -88,6 +96,18 @@ export default function Login({
     setLoading(true);
 
     try {
+      let effectiveLocation = simLocation;
+      if (!effectiveLocation || effectiveLocation === 'Detecting location...') {
+        try {
+          const loc = await fetchRealTimeLocation();
+          effectiveLocation = loc.shortLocation || loc.address || 'Local Workstation';
+          setSimLocation(effectiveLocation);
+          try { localStorage.setItem('ztn_last_location', effectiveLocation); } catch {}
+        } catch {
+          effectiveLocation = 'Local Workstation';
+        }
+      }
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,7 +119,7 @@ export default function Login({
           device_id: simDeviceId,
           browser: browserName,
           os: osName,
-          location: simLocation,
+          location: effectiveLocation,
           login_time: new Date().toISOString()
         })
       });
@@ -137,6 +157,10 @@ export default function Login({
     setLoading(true);
 
     try {
+      const effectiveLoc = (simLocation && simLocation !== 'Detecting location...') 
+        ? simLocation 
+        : (localStorage.getItem('ztn_last_location') || 'Local Workstation');
+
       const response = await fetch('/api/auth/mfa-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -149,7 +173,7 @@ export default function Login({
             device_name: `${osName} (${browserName})`,
             browser: browserName,
             os: osName,
-            location: simLocation
+            location: effectiveLoc
           }
         })
       });
@@ -174,6 +198,10 @@ export default function Login({
     setLoading(true);
 
     try {
+      const effectiveLoc = (simLocation && simLocation !== 'Detecting location...') 
+        ? simLocation 
+        : (localStorage.getItem('ztn_last_location') || 'Local Workstation');
+
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -185,7 +213,8 @@ export default function Login({
           department: regDepartment,
           emp_type: regEmpType,
           device: regDevice,
-          phone: regPhone
+          phone: regPhone,
+          location: effectiveLoc
         })
       });
 

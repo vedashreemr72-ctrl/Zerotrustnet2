@@ -537,6 +537,22 @@ def log_audit(user_id, username, name, dept, event_type, details, ip, device, ri
     _log_event(conn, user_id, username, name, dept, event_type, details, ip, device, risk_contrib, is_suspicious, session_id=session_id)
     conn.commit()
     conn.close()
+    try:
+        log_event_to_supabase({
+            "user_id": user_id,
+            "username": username,
+            "user_name": name,
+            "department": dept,
+            "event_type": event_type,
+            "event_details": details,
+            "ip_addr": ip,
+            "device": device,
+            "risk_contrib": risk_contrib,
+            "is_suspicious": bool(is_suspicious),
+            "session_id": session_id or ""
+        })
+    except Exception:
+        pass
 
 _EVAL_CACHE = {"timestamp": 0, "data": None}
 
@@ -747,25 +763,63 @@ def api_register():
     uid = str(uuid.uuid4())
     now_str = datetime.now().isoformat()
 
+    reg_location = data.get("location", "").strip() or "Bengaluru, India"
+
     c.execute("""INSERT INTO users (id, username, pwd_hash, name, department, emp_type, role, is_active, created_at, phone)
                  VALUES (?,?,?,?,?,?,?,?,?,?)""",
               (uid, username, hash_pwd(password), name, dept, emp_type, "employee", 1, now_str, phone))
 
     c.execute("""INSERT OR IGNORE INTO behavior_data VALUES
         (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (uid, 9, 0, 0, 1, 0, 0, 0, 0.0, 0, 0, 0, 0, 0, "Office", "Office",
+        (uid, 9, 0, 0, 1, 0, 0, 0, 0.0, 0, 0, 0, 0, 0, reg_location, reg_location,
          0, "", 0, "", 0, "", 0, "", 0, "", 0, "", 0, "", 5, 5, 5,
-         "09:00", device_name, "Bengaluru", 15, dept, dept, 0, "None", 0))
+         "09:00", device_name, reg_location, 15, dept, dept, 0, "None", 0))
 
     conn.commit()
     conn.close()
+    invalidate_eval_cache()
 
-    log_audit(uid, username, name, dept, "Employee Registered", f"Account registered for employee '{name}' ({dept}) from device {device_name}", "127.0.0.1", device_name, 0, 0)
+    log_audit(uid, username, name, dept, "Employee Registered", f"Account registered for employee '{name}' ({dept}) from device {device_name} in {reg_location}", "127.0.0.1", device_name, 0, 0)
 
     return jsonify({
         "success": True,
         "message": f"Employee '{name}' registered successfully! You can now log in."
     })
+
+def update_user_session_telemetry(conn, uid, client_location, device_known=None):
+    """
+    Persists real-time client location to behavior_data, maintains travel history,
+    and invalidates the evaluation cache so employee and admin dashboards immediately update.
+    """
+    if not client_location or str(client_location).strip() in ("", "Detecting location...", "Local Workstation Network (Offline / Private Subnet)"):
+        return
+    try:
+        c = conn.cursor()
+        c.execute("SELECT current_login_location FROM behavior_data WHERE user_id=?", (uid,))
+        row = c.fetchone()
+        prev_loc = row[0] if (row and row[0]) else "Office"
+        
+        if device_known is not None:
+            conn.execute("""
+                UPDATE behavior_data 
+                SET last_login_location = CASE WHEN current_login_location IS NOT NULL AND current_login_location != '' THEN current_login_location ELSE ? END,
+                    current_login_location = ?,
+                    last_login_days_ago = 0,
+                    device_known = ?
+                WHERE user_id = ?
+            """, (prev_loc, client_location, device_known, uid))
+        else:
+            conn.execute("""
+                UPDATE behavior_data 
+                SET last_login_location = CASE WHEN current_login_location IS NOT NULL AND current_login_location != '' THEN current_login_location ELSE ? END,
+                    current_login_location = ?,
+                    last_login_days_ago = 0
+                WHERE user_id = ?
+            """, (prev_loc, client_location, uid))
+        conn.commit()
+        invalidate_eval_cache()
+    except Exception as e:
+        print(f"Notice: Failed to update location telemetry: {e}")
 
 def verify_device_security(uid, username, device_id, browser, os_sys):
     """
@@ -947,10 +1001,8 @@ def api_login():
         })
 
     # Device is recognized and trusted + behavior is normal -> Direct Login with Adaptive MFA passed!
-    if dev_check["risk_penalty"] > 0:
-        device_known_val = 1 if (dev_check["is_registered"] and dev_check["is_normal_device"]) else 0
-        conn.execute("UPDATE behavior_data SET device_known=? WHERE user_id=?", (device_known_val, uid))
-        conn.commit()
+    device_known_val = 1 if (dev_check["is_registered"] and dev_check["is_normal_device"]) else 0
+    update_user_session_telemetry(conn, uid, client_location, device_known=device_known_val)
 
     # Supersede older sessions for this device
     conn.execute("UPDATE sessions SET is_active=0 WHERE user_id=? AND device_id=?", (uid, client_device_id))
@@ -964,6 +1016,27 @@ def api_login():
     """, (sid, uid, real_uname, login_time, None, client_ip, device_label, client_device_id, client_browser, client_os, client_location, dept, urole, 0 if urole == "admin" else dev_check["risk_penalty"]))
     conn.commit()
     conn.close()
+
+    try:
+        sync_session_to_supabase({
+            "id": sid,
+            "user_id": uid,
+            "username": real_uname,
+            "role": urole,
+            "department": dept,
+            "login_time": login_time,
+            "ip_addr": client_ip,
+            "device": device_label,
+            "device_id": client_device_id,
+            "browser": client_browser,
+            "os": client_os,
+            "location": client_location,
+            "is_active": True,
+            "risk_score": 0 if urole == "admin" else dev_check["risk_penalty"],
+            "mfa_verified": True
+        })
+    except Exception:
+        pass
 
     audit_desc = f"Enterprise Session Established (Trusted Endpoint — Adaptive MFA Passed) | DeviceID: {client_device_id} | OS: {client_os} | Location: {client_location}"
     log_audit(uid, real_uname, name, dept, "Login", audit_desc, client_ip, device_label, 0, 0, session_id=sid)
@@ -3086,10 +3159,34 @@ def api_mfa_verify():
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,1)
         """, (sid, uid, username, login_time, None, client_ip, device_label, client_dev_id, client_browser, client_os, client_loc, dept, urole))
         
+        # Update real-time location and endpoint status in behavior_data
+        update_user_session_telemetry(conn, uid, client_loc, device_known=1 if trust_this_device else None)
+
         # Mark challenge verified in database
         conn.execute("UPDATE mfa_challenges SET status='verified', verified_at=? WHERE id=?", (login_time, challenge_id))
         conn.commit()
         conn.close()
+
+        try:
+            sync_session_to_supabase({
+                "id": sid,
+                "user_id": uid,
+                "username": username,
+                "role": urole,
+                "department": dept,
+                "login_time": login_time,
+                "ip_addr": client_ip,
+                "device": device_label,
+                "device_id": client_dev_id,
+                "browser": client_browser,
+                "os": client_os,
+                "location": client_loc,
+                "is_active": True,
+                "risk_score": 0,
+                "mfa_verified": True
+            })
+        except Exception:
+            pass
 
         trust_note = "Endpoint trusted for future baseline logins" if trust_this_device else "Single session verification"
         log_audit(uid, username, name, dept, "Login (Adaptive MFA Verified)",
@@ -3637,11 +3734,18 @@ def serve_frontend(path):
 
 # ── HARDWARE USB / PENDRIVE / PORTABLE STORAGE WATCHDOG ─────────────────────────
 
-import winreg
+try:
+    if sys.platform == 'win32':
+        import winreg
+    else:
+        winreg = None
+except Exception:
+    winreg = None
+
 try:
     SEM_FAILCRITICALERRORS = 0x0001
     SEM_NOOPENFILEERRORBOX = 0x8000
-    if sys.platform == 'win32':
+    if sys.platform == 'win32' and hasattr(ctypes, 'windll'):
         ctypes.windll.kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)
 except Exception:
     pass
@@ -3649,6 +3753,8 @@ except Exception:
 def get_connected_storage_drives():
     """Returns a dict of currently mounted drive letters and volume info on Windows."""
     drives = {}
+    if sys.platform != 'win32' or not hasattr(ctypes, 'windll'):
+        return drives
     try:
         if sys.platform == 'win32':
             bitmask = ctypes.windll.kernel32.GetLogicalDrives()
@@ -3687,6 +3793,8 @@ def is_pnp_device_present(instance_id):
 
 def get_pnp_device_name(reg_path):
     """Retrieves human-readable device name from registry."""
+    if not winreg:
+        return "USB Storage / Removable Device"
     try:
         k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
         for val_name in ["FriendlyName", "DeviceDesc"]:
@@ -3705,7 +3813,7 @@ def get_pnp_device_name(reg_path):
 def scan_all_connected_usb():
     """Scans all physically connected USB, USBSTOR, and WPD (phones/media) devices on Windows."""
     present_devices = {}
-    if sys.platform != 'win32':
+    if sys.platform != 'win32' or not winreg:
         return present_devices
     for base_key_name in [r"SYSTEM\CurrentControlSet\Enum\USBSTOR", r"SYSTEM\CurrentControlSet\Enum\WPD", r"SYSTEM\CurrentControlSet\Enum\USB"]:
         try:
@@ -3830,6 +3938,9 @@ def usb_hardware_daemon():
     when physical USB drives, pendrives, phones, or removable media are inserted into the machine.
     Immediately dispatches critical security notifications to the Admin SOC Dashboard.
     """
+    if sys.platform != 'win32' or not winreg:
+        return
+
     time.sleep(2)
     
     # Baseline fixed drives on startup (e.g. C:\, D:\)
@@ -3899,9 +4010,10 @@ try:
     ensure_incidents(df_init)
     ensure_trusted_devices_seeded()
 
-    # Launch hardware USB monitoring daemon thread
-    usb_thread = threading.Thread(target=usb_hardware_daemon, daemon=True)
-    usb_thread.start()
+    # Launch hardware USB monitoring daemon thread (Windows local workstation endpoints only)
+    if sys.platform == 'win32' and winreg:
+        usb_thread = threading.Thread(target=usb_hardware_daemon, daemon=True)
+        usb_thread.start()
 except Exception as e:
     print(f"Startup initialization notice: {e}")
 

@@ -1753,10 +1753,84 @@ body::before {
 [data-theme="light"] [style*="background: rgba(15, 23, 42"],
 [data-theme="light"] [style*="background: rgba(6, 14, 42"],
 [data-theme="light"] [style*="background: rgba(3, 9, 30"],
-[data-theme="light"] [style*="background: rgba(13, 27, 62"] {
+[data-theme="light"] [style*="background: rgba(13, 27, 62"],
+[data-theme="light"] [style*="rgba(13, 27, 62"],
+[data-theme="light"] [style*="rgba(3, 9, 30"] {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* 🔔 NOTIFICATION CENTER & FLOATING TOASTS (LIGHT THEME) */
+[data-theme="light"] .ztn-toast {
   background: #ffffff !important;
   border-color: #cbd5e1 !important;
   color: #0f172a !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-title {
+  color: #0284c7 !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-title.critical {
+  color: #dc2626 !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-title.high {
+  color: #ea580c !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-title.medium {
+  color: #d97706 !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-title.low {
+  color: #0284c7 !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-subject {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-msg {
+  color: #334155 !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-footer {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-footer strong {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-dismiss {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .ztn-toast .ztn-toast-dismiss:hover {
+  color: #0f172a !important;
+  background: #f1f5f9 !important;
+}
+
+[data-theme="light"] .ztn-notification-drawer {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .ztn-notification-item {
+  border-color: #e2e8f0 !important;
+}
+
+[data-theme="light"] .ztn-notification-item.is-read {
+  background: #f8fafc !important;
+}
+
+[data-theme="light"] .ztn-notification-item.is-unread {
+  background: #ffffff !important;
 }
 
 /* Remap every dim text color in JSX (both Hex and Browser-computed RGB) */

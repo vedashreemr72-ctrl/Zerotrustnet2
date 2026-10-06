@@ -2,7 +2,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(env_path)
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")

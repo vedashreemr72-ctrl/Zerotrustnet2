@@ -338,7 +338,14 @@ export default function App() {
                           <tr style={{ borderBottom: '1px solid rgba(0, 245, 255, 0.04)' }}>
                             <td style={{ padding: '8px 0', color: '#8aafc8' }}>Work location</td>
                             <td style={{ textAlign: 'center', color: '#4a6275' }}>{empData.baseline.location}</td>
-                            <td style={{ textAlign: 'center', color: empData.baseline.actual_location !== empData.baseline.location ? '#ef4444' : '#22c55e', fontWeight: 'bold' }}>
+                            <td style={{ 
+                              textAlign: 'center', 
+                              color: (empData.baseline.actual_location && empData.baseline.location && 
+                                !empData.baseline.actual_location.toLowerCase().includes(empData.baseline.location.toLowerCase()) && 
+                                !empData.baseline.location.toLowerCase().includes(empData.baseline.actual_location.toLowerCase())) 
+                                ? '#ef4444' : '#22c55e', 
+                              fontWeight: 'bold' 
+                            }}>
                               {empData.baseline.actual_location}
                             </td>
                           </tr>
