@@ -282,6 +282,21 @@ def init_db():
     if 'file_size_mb' not in existing_file_cols:
         c.execute("ALTER TABLE file_access_logs ADD COLUMN file_size_mb REAL DEFAULT 0.0")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS file_access_appeals (
+        id               TEXT PRIMARY KEY,
+        user_id          TEXT NOT NULL,
+        username         TEXT NOT NULL,
+        name             TEXT NOT NULL,
+        department       TEXT NOT NULL,
+        reason           TEXT NOT NULL,
+        requested_files  INTEGER DEFAULT 10,
+        status           TEXT DEFAULT 'Pending',
+        created_at       TEXT NOT NULL,
+        reviewed_at      TEXT,
+        reviewed_by      TEXT,
+        admin_notes      TEXT DEFAULT ''
+    )""")
+
     c.execute("""CREATE TABLE IF NOT EXISTS extracted_archives (
         id             TEXT PRIMARY KEY,
         user_id        TEXT NOT NULL,
@@ -1281,6 +1296,35 @@ def api_test_sms():
         "details": res
     }), 500
 
+def check_user_file_quota(uid):
+    """
+    Checks if employee has exceeded their file access quota.
+    Default limit: 10 files.
+    Approved appeals grant requested_files extra quota.
+    Returns: (is_allowed: bool, quota_used: int, quota_limit: int, has_pending: bool)
+    """
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM file_access_logs WHERE user_id=?", (uid,))
+    used_logs = c.fetchone()[0]
+
+    c.execute("SELECT file_access_count FROM behavior_data WHERE user_id=?", (uid,))
+    b_row = c.fetchone()
+    used_bd = b_row[0] if (b_row and b_row[0] is not None) else 0
+    quota_used = max(used_logs, used_bd)
+
+    base_limit = 10
+    c.execute("SELECT COALESCE(SUM(requested_files), 0) FROM file_access_appeals WHERE user_id=? AND status='Approved'", (uid,))
+    extra_approved = c.fetchone()[0] or 0
+    quota_limit = base_limit + extra_approved
+
+    c.execute("SELECT COUNT(*) FROM file_access_appeals WHERE user_id=? AND status='Pending'", (uid,))
+    has_pending = c.fetchone()[0] > 0
+    conn.close()
+
+    is_allowed = quota_used < quota_limit
+    return is_allowed, quota_used, quota_limit, has_pending
+
 @app.route('/api/employee/dashboard', methods=['GET'])
 def employee_dashboard():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -1346,12 +1390,19 @@ def employee_dashboard():
         "location": sr[8], "is_active": bool(sr[9]), "mfa_verified": bool(sr[10])
     } for sr in sess_rows]
 
-    conn.close()
+    is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
 
     return jsonify({
         "risk_score": r["risk_score"],
         "severity": r["severity"],
         "exfil_probability": r["exfil_probability"],
+        "file_quota": {
+            "used": quota_used,
+            "limit": quota_limit,
+            "remaining": max(0, quota_limit - quota_used),
+            "is_exhausted": not is_allowed,
+            "has_pending_appeal": has_pending
+        },
         "timeline": r["timeline"],
         "reasons": r["reasons"],
         "recommendations": r["recommendations"],
@@ -1411,6 +1462,19 @@ def employee_action():
         conn.close()
         return jsonify({"error": "Behavior data profile not found"}), 404
     b_data = dict(zip(cols, b_row))
+
+    # Enforce 10-file quota check on file operations
+    if action_type in ["download_report", "upload_doc", "open_confidential", "delete_file"]:
+        is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
+        if not is_allowed:
+            conn.close()
+            return jsonify({
+                "error": f"File access quota reached ({quota_used}/{quota_limit} files used). Please submit an access appeal request to unlock further file access.",
+                "quota_exceeded": True,
+                "quota_used": quota_used,
+                "quota_limit": quota_limit,
+                "has_pending_appeal": has_pending
+            }), 403
 
     event_type = "Sensitive Page Access"
     details = ""
@@ -3805,6 +3869,16 @@ def employee_file_access():
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
+    is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
+    if not is_allowed:
+        return jsonify({
+            "error": f"File access quota limit reached ({quota_used}/{quota_limit} files accessed). You must submit an access appeal request to unlock further file access.",
+            "quota_exceeded": True,
+            "quota_used": quota_used,
+            "quota_limit": quota_limit,
+            "has_pending_appeal": has_pending
+        }), 403
+
     data = request.json or {}
     filename = data.get("filename", "document.pdf")
     filepath = data.get("filepath", f"/company/files/{filename}")
@@ -3863,6 +3937,163 @@ def employee_file_access_history():
     conn.close()
 
     return jsonify([dict(zip(cols, r)) for r in rows])
+
+@app.route('/api/employee/appeals', methods=['GET'])
+def employee_get_appeals():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT id, reason, requested_files, status, created_at, reviewed_at, reviewed_by, admin_notes
+        FROM file_access_appeals WHERE user_id=? ORDER BY created_at DESC
+    """, (uid,))
+    rows = c.fetchall()
+    conn.close()
+
+    appeals = [{
+        "id": r[0], "reason": r[1], "requested_files": r[2], "status": r[3],
+        "created_at": r[4], "reviewed_at": r[5], "reviewed_by": r[6], "admin_notes": r[7]
+    } for r in rows]
+
+    return jsonify({
+        "quota": {
+            "used": quota_used,
+            "limit": quota_limit,
+            "remaining": max(0, quota_limit - quota_used),
+            "is_exhausted": not is_allowed,
+            "has_pending_appeal": has_pending
+        },
+        "appeals": appeals
+    })
+
+@app.route('/api/employee/appeal-access', methods=['POST'])
+def employee_submit_appeal():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        ip = payload.get("ip", "127.0.0.1")
+        device = payload.get("device", "Workstation")
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    data = request.json or {}
+    reason = (data.get("reason") or "").strip()
+    requested_files = int(data.get("requested_files") or 10)
+
+    if not reason:
+        return jsonify({"error": "Please provide a valid business justification for additional file access."}), 400
+
+    is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
+    if has_pending:
+        return jsonify({"error": "You already have an appeal pending review by the Security Administrator."}), 400
+
+    appeal_id = str(uuid.uuid4())
+    now_ts = datetime.now().astimezone().isoformat()
+
+    conn = get_conn()
+    conn.execute("""
+        INSERT INTO file_access_appeals (id, user_id, username, name, department, reason, requested_files, status, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+    """, (appeal_id, uid, uname, name, dept, reason, requested_files, "Pending", now_ts))
+    conn.commit()
+    conn.close()
+
+    log_audit(uid, uname, name, dept, "Access Appeal Submitted",
+              f"Employee submitted appeal for {requested_files} additional files: '{reason}'",
+              ip, device, 0, 0)
+
+    return jsonify({
+        "success": True,
+        "message": "Access appeal submitted successfully. IT Security Administrator will review your request.",
+        "appeal_id": appeal_id
+    })
+
+@app.route('/api/admin/appeals', methods=['GET'])
+def admin_get_appeals():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT a.id, a.user_id, a.username, a.name, a.department, a.reason,
+               a.requested_files, a.status, a.created_at, a.reviewed_at, a.reviewed_by, a.admin_notes,
+               b.file_access_count
+        FROM file_access_appeals a
+        LEFT JOIN behavior_data b ON b.user_id = a.user_id
+        ORDER BY CASE WHEN a.status='Pending' THEN 0 ELSE 1 END, a.created_at DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    appeals = [{
+        "id": r[0], "user_id": r[1], "username": r[2], "name": r[3], "department": r[4],
+        "reason": r[5], "requested_files": r[6], "status": r[7], "created_at": r[8],
+        "reviewed_at": r[9], "reviewed_by": r[10], "admin_notes": r[11],
+        "current_files_accessed": r[12] or 0
+    } for r in rows]
+
+    return jsonify(appeals)
+
+@app.route('/api/admin/appeals/<appeal_id>/action', methods=['POST'])
+def admin_action_appeal(appeal_id):
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        admin_uname = payload.get("username", "admin")
+        if payload.get("role") != "admin":
+            return jsonify({"error": "Admin access required"}), 403
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    data = request.json or {}
+    action = data.get("action", "").lower() # 'approve' or 'reject'
+    admin_notes = data.get("notes", "")
+
+    if action not in ["approve", "reject"]:
+        return jsonify({"error": "Invalid action. Choose 'approve' or 'reject'."}), 400
+
+    new_status = "Approved" if action == "approve" else "Rejected"
+    now_ts = datetime.now().astimezone().isoformat()
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT user_id, username, name, department, requested_files FROM file_access_appeals WHERE id=?", (appeal_id,))
+    appeal = c.fetchone()
+    if not appeal:
+        conn.close()
+        return jsonify({"error": "Appeal not found"}), 404
+
+    uid, uname, name, dept, req_files = appeal
+
+    conn.execute("""
+        UPDATE file_access_appeals
+        SET status=?, reviewed_at=?, reviewed_by=?, admin_notes=?
+        WHERE id=?
+    """, (new_status, now_ts, admin_uname, admin_notes, appeal_id))
+    conn.commit()
+    conn.close()
+
+    log_audit("admin", admin_uname, "Security Admin", "IT Security", f"Access Appeal {new_status}",
+              f"Administrator {admin_uname} {new_status.lower()} access appeal for {uname} (+{req_files} files granted). Notes: {admin_notes}",
+              "127.0.0.1", "Admin Console", 0, 0)
+
+    invalidate_eval_cache()
+
+    return jsonify({
+        "success": True,
+        "message": f"Appeal has been {new_status.lower()} successfully.",
+        "status": new_status
+    })
 
 @app.route('/api/admin/device-trust', methods=['GET'])
 def admin_device_trust():

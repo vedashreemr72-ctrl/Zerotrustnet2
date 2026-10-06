@@ -12,9 +12,10 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [liveActivity, setLiveActivity] = useState([]);
   const [mfaEvents, setMfaEvents] = useState([]);
   const [trustedDevices, setTrustedDevices] = useState([]);
+  const [appeals, setAppeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sessions', 'employees', 'notifications', 'devices', 'mfa_events'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sessions', 'employees', 'notifications', 'devices', 'mfa_events', 'appeals'
   const [actionMsg, setActionMsg] = useState('');
   const [selectedEmployeeLoc, setSelectedEmployeeLoc] = useState(null);
 
@@ -36,7 +37,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   const fetchSOCData = async () => {
     try {
-      const [dashRes, empRes, sessRes, notifRes, devRes, liveRes, mfaRes, trustDevRes] = await Promise.all([
+      const [dashRes, empRes, sessRes, notifRes, devRes, liveRes, mfaRes, trustDevRes, appealRes] = await Promise.all([
         fetch('/api/admin/dashboard', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/sessions', { headers: { 'Authorization': `Bearer ${token}` } }),
@@ -44,7 +45,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
         fetch('/api/admin/device-trust', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/admin/live-activity', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/auth/mfa-events', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/auth/trusted-devices', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/auth/trusted-devices', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/admin/appeals', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
       if (dashRes.status === 401) {
@@ -60,6 +62,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
       const liveData = await parseJsonSafe(liveRes);
       const mfaData = mfaRes.ok ? await parseJsonSafe(mfaRes) : [];
       const trustDevData = trustDevRes.ok ? await parseJsonSafe(trustDevRes) : [];
+      const appealData = appealRes.ok ? await parseJsonSafe(appealRes) : [];
 
       if (!dashRes.ok) {
         if (dashData.error === 'Invalid token' && onLogout) {
@@ -77,6 +80,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
       setLiveActivity(liveData || []);
       setMfaEvents(mfaData || []);
       setTrustedDevices(trustDevData || []);
+      setAppeals(appealData || []);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -202,6 +206,26 @@ export default function AdminDashboard({ token, user, onLogout }) {
       fetchSOCData();
     } catch (err) {
       setActionMsg(`❌ ${err.message}`);
+    }
+  };
+
+  const handleAppealAction = async (appealId, action, notes = '') => {
+    try {
+      const res = await fetch(`/api/admin/appeals/${appealId}/action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ action, notes })
+      });
+      const resData = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(resData.error || 'Failed to update appeal');
+      setActionMsg(`✅ ${resData.message}`);
+      setTimeout(() => setActionMsg(''), 4000);
+      fetchSOCData();
+    } catch (err) {
+      alert(`Appeal Action Error: ${err.message}`);
     }
   };
 
@@ -371,6 +395,13 @@ export default function AdminDashboard({ token, user, onLogout }) {
           </button>
           <button className={`zt-btn ${activeTab === 'mfa_events' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('mfa_events')}>
             <Shield size={15} /> Adaptive MFA & Auth Events ({mfaEvents.length})
+          </button>
+          <button 
+            className={`zt-btn ${activeTab === 'appeals' ? '' : 'zt-btn-sec'}`} 
+            onClick={() => setActiveTab('appeals')}
+            style={appeals.filter(a => a.status === 'Pending').length > 0 ? { borderColor: '#eab308', color: '#eab308', fontWeight: 'bold' } : {}}
+          >
+            <FileText size={15} /> Access Appeals ({appeals.filter(a => a.status === 'Pending').length} Pending)
           </button>
         </div>
 
@@ -1045,6 +1076,136 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Access Appeals Management Tab */}
+      {activeTab === 'appeals' && (
+        <div className="zt-card" style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#00f5ff' }}>
+                📁 Employee File Access Appeals & Quota Extension Management
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                Zero Trust Least Privilege enforcement: Employees exceeding the 10-file quota require administrator authorization.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(251, 191, 36, 0.12)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(251, 191, 36, 0.3)', fontWeight: 'bold' }}>
+                ⏳ {appeals.filter(a => a.status === 'Pending').length} Pending Review
+              </span>
+              <button className="zt-btn" style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem' }} onClick={fetchSOCData}>
+                🔄 Refresh
+              </button>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="zt-table" style={{ width: '100%', fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Timestamp</th>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Requested Quota</th>
+                  <th>Business Justification</th>
+                  <th>Status</th>
+                  <th>Review Details</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {appeals.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" style={{ textAlign: 'center', color: '#64748b', padding: '1.5rem' }}>
+                      No file access appeals recorded in the system.
+                    </td>
+                  </tr>
+                ) : (
+                  appeals.map((appeal) => (
+                    <tr key={appeal.id} style={{ background: appeal.status === 'Pending' ? 'rgba(234, 179, 8, 0.05)' : 'transparent' }}>
+                      <td style={{ fontWeight: 'bold', color: '#00f5ff', fontFamily: 'monospace' }}>
+                        #{appeal.id}
+                      </td>
+                      <td style={{ color: '#94a3b8', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                        {formatLocalDateTime(appeal.created_at)}
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 'bold', color: '#e2e8f0' }}>{appeal.name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>@{appeal.username} (ID: {appeal.user_id})</div>
+                      </td>
+                      <td style={{ color: '#38bdf8' }}>{appeal.department || 'N/A'}</td>
+                      <td>
+                        <span style={{ fontWeight: 'bold', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                          +{appeal.requested_files} Files
+                        </span>
+                      </td>
+                      <td style={{ maxWidth: '280px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                        <div style={{ wordBreak: 'break-word' }}>
+                          "{appeal.reason}"
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{
+                          padding: '0.25rem 0.6rem',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          fontWeight: 'bold',
+                          background: appeal.status === 'Approved' ? 'rgba(34, 197, 94, 0.15)' : appeal.status === 'Rejected' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                          color: appeal.status === 'Approved' ? '#22c55e' : appeal.status === 'Rejected' ? '#ef4444' : '#eab308',
+                          border: `1px solid ${appeal.status === 'Approved' ? 'rgba(34, 197, 94, 0.4)' : appeal.status === 'Rejected' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(234, 179, 8, 0.4)'}`
+                        }}>
+                          {appeal.status}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                        {appeal.reviewed_at ? (
+                          <div>
+                            <div>By: <strong style={{ color: '#e2e8f0' }}>{appeal.reviewed_by}</strong></div>
+                            <div style={{ color: '#64748b' }}>{formatLocalDateTime(appeal.reviewed_at)}</div>
+                            {appeal.admin_notes && <div style={{ color: '#38bdf8' }}>Note: {appeal.admin_notes}</div>}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#64748b', fontStyle: 'italic' }}>Pending review</span>
+                        )}
+                      </td>
+                      <td>
+                        {appeal.status === 'Pending' ? (
+                          <div style={{ display: 'flex', gap: '0.4rem' }}>
+                            <button
+                              className="zt-btn"
+                              style={{ background: '#10b981', color: '#000', padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 'bold' }}
+                              onClick={() => handleAppealAction(appeal.id, 'approve', `Approved +${appeal.requested_files} file extension`)}
+                              title={`Grant +${appeal.requested_files} additional file accesses`}
+                            >
+                              ✓ Approve (+{appeal.requested_files})
+                            </button>
+                            <button
+                              className="zt-btn"
+                              style={{ background: '#ef4444', color: '#fff', padding: '0.3rem 0.6rem', fontSize: '0.72rem' }}
+                              onClick={() => {
+                                const reason = prompt('Optional rejection note / reason:', 'Insufficient business justification for extension');
+                                if (reason !== null) {
+                                  handleAppealAction(appeal.id, 'reject', reason);
+                                }
+                              }}
+                              title="Reject access extension request"
+                            >
+                              ✕ Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Completed</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

@@ -74,6 +74,60 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
   const [selectedExistingArchiveId, setSelectedExistingArchiveId] = useState('');
   const [extractedArchivesList, setExtractedArchivesList] = useState([]);
 
+  // File Access Quota & Appeal States
+  const [showAppealModal, setShowAppealModal] = useState(false);
+  const [appealReason, setAppealReason] = useState('');
+  const [appealRequestedFiles, setAppealRequestedFiles] = useState(10);
+  const [appealsList, setAppealsList] = useState([]);
+  const [appealSubmitting, setAppealSubmitting] = useState(false);
+
+  const fetchAppeals = async () => {
+    try {
+      const res = await fetch('/api/employee/appeals', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const appealData = await res.json();
+        setAppealsList(appealData.appeals || []);
+      }
+    } catch (e) {
+      console.warn('Failed to load appeals:', e);
+    }
+  };
+
+  const handleAppealSubmit = async (e) => {
+    e.preventDefault();
+    if (!appealReason.trim()) {
+      alert("Please provide a business justification for requesting additional file access.");
+      return;
+    }
+    setAppealSubmitting(true);
+    try {
+      const res = await fetch('/api/employee/appeal-access', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          reason: appealReason,
+          requested_files: parseInt(appealRequestedFiles) || 10
+        })
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Failed to submit appeal');
+
+      setActionAlert({ type: 'success', msg: `✅ ${resData.message}` });
+      setAppealReason('');
+      fetchAppeals();
+      fetchDashboardData();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setAppealSubmitting(false);
+    }
+  };
+
   const handleRealFileUploadSubmit = async (e) => {
     e.preventDefault();
     if (!selectedUploadFile) {
@@ -273,7 +327,16 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
         body: JSON.stringify({ action: actionType, ...extraData })
       });
       const res = await response.json();
-      if (!response.ok) throw new Error(res.error || 'Action failed');
+      if (!response.ok) {
+        if (res.quota_exceeded) {
+          setActiveModal(null);
+          setShowAppealModal(true);
+          fetchAppeals();
+          setActionAlert({ type: 'error', msg: `⛔ ${res.error} (10-file quota exceeded). Please submit an appeal below.` });
+          return;
+        }
+        throw new Error(res.error || 'Action failed');
+      }
 
       if (res.warning) {
         setActionAlert({ type: 'warning', msg: res.warning });
@@ -448,7 +511,16 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
       });
 
       const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || 'File operation failed');
+      if (!res.ok) {
+        if (resData.quota_exceeded) {
+          setShowFileModal(false);
+          setShowAppealModal(true);
+          fetchAppeals();
+          setActionAlert({ type: 'error', msg: `⛔ ${resData.error} (Maximum 10-file quota reached). Please appeal below for extension.` });
+          return;
+        }
+        throw new Error(resData.error || 'File operation failed');
+      }
 
       if (resData.is_flagged) {
         setShowStepUpModal(true);
@@ -523,9 +595,41 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
               </div>
             </div>
           </div>
-          <button className="zt-btn" style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }} onClick={() => setShowFileModal(true)}>
-            📂 File Access Monitor
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {data?.file_quota && (
+              <div style={{
+                background: data.file_quota.is_exhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(0, 245, 255, 0.12)',
+                border: `1px solid ${data.file_quota.is_exhausted ? '#ef4444' : 'rgba(0, 245, 255, 0.4)'}`,
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                color: data.file_quota.is_exhausted ? '#ef4444' : '#00f5ff',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}>
+                📁 Quota: {data.file_quota.used} / {data.file_quota.limit} Files
+                {data.file_quota.is_exhausted && <span style={{ color: '#ef4444' }}>(Exhausted)</span>}
+              </div>
+            )}
+            <button className="zt-btn" style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }} onClick={() => setShowFileModal(true)}>
+              📂 File Access Monitor
+            </button>
+            <button 
+              className="zt-btn" 
+              style={{ 
+                padding: '0.4rem 0.85rem', 
+                fontSize: '0.8rem',
+                background: data?.file_quota?.is_exhausted ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'rgba(234, 179, 8, 0.15)',
+                borderColor: data?.file_quota?.is_exhausted ? '#ef4444' : '#eab308',
+                color: data?.file_quota?.is_exhausted ? '#fff' : '#eab308'
+              }} 
+              onClick={() => { setShowAppealModal(true); fetchAppeals(); }}
+            >
+              📝 Access Appeal
+            </button>
+          </div>
         </div>
 
         {/* 9-Field Telemetry Grid */}
@@ -1832,6 +1936,190 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Zero Trust File Access Quota Appeal Modal */}
+      {showAppealModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1002,
+          padding: '1rem'
+        }}>
+          <div className="zt-card" style={{ maxWidth: '640px', width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '1.5rem', border: '1.5px solid #00f5ff', boxShadow: '0 0 30px rgba(0, 245, 255, 0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(0, 245, 255, 0.2)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Shield size={24} color="#00f5ff" />
+                <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#00f5ff' }}>
+                  Zero Trust File Access Quota & Appeal
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowAppealModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: '8px',
+              padding: '0.85rem',
+              marginBottom: '1rem',
+              fontSize: '0.82rem',
+              color: '#fecaca',
+              lineHeight: '1.45'
+            }}>
+              <strong>🛡️ Zero Trust Least-Privilege Policy:</strong> Each employee account is granted an operational limit of <strong>10 file accesses</strong>. Once you reach 10 file accesses, further file reads, downloads, uploads, and sensitive document access are automatically restricted until an administrative appeal is submitted and approved by the Security Administrator.
+            </div>
+
+            {/* Quota Telemetry Status Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Allowed Limit</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#00f5ff' }}>{data?.file_quota?.limit ?? 10}</div>
+                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Files Baseline</div>
+              </div>
+              <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Files Accessed</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: data?.file_quota?.is_exhausted ? '#ef4444' : '#eab308' }}>
+                  {data?.file_quota?.used ?? 0}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Total Logged</div>
+              </div>
+              <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Remaining</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: (data?.file_quota?.remaining ?? 0) > 0 ? '#22c55e' : '#ef4444' }}>
+                  {data?.file_quota?.remaining ?? 0}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Available Accesses</div>
+              </div>
+            </div>
+
+            {/* Appeal Submission Form */}
+            <form onSubmit={handleAppealSubmit} style={{ marginBottom: '1.5rem', background: 'rgba(15, 23, 42, 0.5)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(0, 245, 255, 0.15)' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#e2e8f0', marginBottom: '0.75rem' }}>
+                📝 Submit New Access Appeal Request
+              </div>
+
+              <div className="zt-input-group" style={{ marginBottom: '0.75rem' }}>
+                <label style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Requested Additional Files Allocation:</label>
+                <select 
+                  className="zt-select" 
+                  value={appealRequestedFiles} 
+                  onChange={(e) => setAppealRequestedFiles(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(0, 245, 255, 0.3)', color: '#fff', borderRadius: '6px' }}
+                >
+                  <option value="5">+5 Additional Files</option>
+                  <option value="10">+10 Additional Files (Recommended)</option>
+                  <option value="20">+20 Additional Files (Project Batch)</option>
+                  <option value="50">+50 Additional Files (Enterprise Migration)</option>
+                </select>
+              </div>
+
+              <div className="zt-input-group" style={{ marginBottom: '0.85rem' }}>
+                <label style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Business Justification / Reason for File Access Extension:</label>
+                <textarea 
+                  className="zt-input" 
+                  rows={3}
+                  value={appealReason}
+                  onChange={(e) => setAppealReason(e.target.value)}
+                  placeholder="e.g., Preparing quarterly financial audit and compliance reports. Need to inspect client transaction logs and verify tax records."
+                  required
+                  style={{ width: '100%', resize: 'vertical', fontSize: '0.8rem', padding: '0.6rem' }}
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                className="zt-btn" 
+                style={{ width: '100%', background: 'linear-gradient(135deg, #00f5ff, #0284c7)', color: '#000', fontWeight: 'bold' }}
+                disabled={appealSubmitting}
+              >
+                {appealSubmitting ? 'Submitting Appeal to SOC...' : '📨 Submit Appeal for Admin Approval'}
+              </button>
+            </form>
+
+            {/* Appeal History */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#94a3b8' }}>
+                  📜 My Appeal Requests & Review Status
+                </div>
+                <button 
+                  type="button" 
+                  onClick={fetchAppeals}
+                  style={{ background: 'transparent', border: 'none', color: '#00f5ff', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  🔄 Refresh Status
+                </button>
+              </div>
+
+              {appealsList.length === 0 ? (
+                <div style={{ padding: '0.85rem', textAlign: 'center', color: '#64748b', fontSize: '0.78rem', background: 'rgba(15, 23, 42, 0.4)', borderRadius: '6px' }}>
+                  No appeal requests submitted yet.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {appealsList.map((app) => (
+                    <div 
+                      key={app.id} 
+                      style={{ 
+                        padding: '0.75rem', 
+                        background: 'rgba(15, 23, 42, 0.6)', 
+                        borderRadius: '6px', 
+                        border: `1px solid ${app.status === 'Approved' ? 'rgba(34, 197, 94, 0.3)' : app.status === 'Rejected' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(234, 179, 8, 0.3)'}`,
+                        fontSize: '0.78rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                        <span style={{ fontWeight: 'bold', color: '#e2e8f0' }}>
+                          Appeal #{app.id} · +{app.requested_files} Files
+                        </span>
+                        <span style={{
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 'bold',
+                          background: app.status === 'Approved' ? 'rgba(34, 197, 94, 0.2)' : app.status === 'Rejected' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                          color: app.status === 'Approved' ? '#22c55e' : app.status === 'Rejected' ? '#ef4444' : '#eab308'
+                        }}>
+                          {app.status}
+                        </span>
+                      </div>
+                      <div style={{ color: '#cbd5e1', marginBottom: '0.3rem', fontStyle: 'italic' }}>
+                        "{app.reason}"
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '0.7rem' }}>
+                        <span>Submitted: {formatLocalDateTime(app.created_at)}</span>
+                        {app.admin_notes && (
+                          <span style={{ color: '#38bdf8' }}>Admin Note: {app.admin_notes}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: '1.25rem', textAlign: 'right' }}>
+              <button 
+                type="button" 
+                className="zt-btn zt-btn-sec" 
+                onClick={() => setShowAppealModal(false)}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
