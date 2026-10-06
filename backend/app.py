@@ -1103,6 +1103,154 @@ def api_verify():
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
+@app.route('/api/user/profile', methods=['GET'])
+def api_user_profile():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        sid = payload.get("session_id")
+
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT id, username, name, department, emp_type, role, is_active, created_at FROM users WHERE id=?", (uid,))
+        u_row = c.fetchone()
+        if not u_row:
+            conn.close()
+            return jsonify({"error": "User not found"}), 404
+
+        user_info = {
+            "id": u_row[0],
+            "username": u_row[1],
+            "name": u_row[2],
+            "department": u_row[3],
+            "emp_type": u_row[4],
+            "role": u_row[5],
+            "is_active": u_row[6],
+            "created_at": u_row[7],
+            "email": f"{u_row[1]}@zerotrustnet.io"
+        }
+
+        # Behavior & Baseline telemetry
+        c.execute("""SELECT current_login_location, baseline_location, baseline_login_time, 
+                            baseline_device, baseline_file_access, accessed_folders, expected_folders,
+                            impossible_travel_flag, burnout_stress_score, last_login_location
+                     FROM behavior_data WHERE user_id=?""", (uid,))
+        b_row = c.fetchone()
+        baseline_info = {
+            "current_location": (b_row[0] if (b_row and b_row[0]) else payload.get("location")) or "Office Workstation",
+            "baseline_location": (b_row[1] if (b_row and b_row[1]) else "Bengaluru"),
+            "baseline_login_time": (b_row[2] if (b_row and b_row[2]) else "09:00"),
+            "baseline_device": (b_row[3] if (b_row and b_row[3]) else "Office Laptop"),
+            "baseline_file_access": (b_row[4] if (b_row and b_row[4]) else 15),
+            "accessed_folders": (b_row[5] if (b_row and b_row[5]) else ""),
+            "expected_folders": (b_row[6] if (b_row and b_row[6]) else ""),
+            "impossible_travel": (b_row[7] if (b_row and b_row[7]) else 0),
+            "burnout_score": (b_row[8] if (b_row and b_row[8]) else 0),
+            "last_login_location": (b_row[9] if (b_row and b_row[9]) else "Office Workstation")
+        }
+
+        # Active session information
+        session_info = {}
+        if sid:
+            c.execute("SELECT id, login_time, ip_addr, device_id, browser, os, location, mfa_verified FROM sessions WHERE id=?", (sid,))
+            s_row = c.fetchone()
+            if s_row:
+                session_info = {
+                    "session_id": s_row[0],
+                    "login_time": s_row[1],
+                    "ip_addr": s_row[2],
+                    "device_id": s_row[3],
+                    "browser": s_row[4],
+                    "os": s_row[5],
+                    "location": s_row[6],
+                    "mfa_verified": bool(s_row[7])
+                }
+        if not session_info:
+            session_info = {
+                "session_id": sid or f"SESS-{uid[:6]}",
+                "login_time": payload.get("login_time", datetime.now().isoformat()),
+                "ip_addr": payload.get("ip", "127.0.0.1"),
+                "device_id": payload.get("device_id", "DEV-DEFAULT"),
+                "browser": payload.get("browser", "Microsoft Edge"),
+                "os": payload.get("os", "Windows 11"),
+                "location": payload.get("location", "Office Workstation"),
+                "mfa_verified": payload.get("mfa_verified", True)
+            }
+
+        # Recent personal audit trail
+        c.execute("""SELECT timestamp, event_type, event_details, ip_addr, device, risk_contrib, is_suspicious 
+                     FROM audit_events WHERE user_id=? ORDER BY timestamp DESC LIMIT 10""", (uid,))
+        recent_events = [
+            {
+                "timestamp": r[0],
+                "event_type": r[1],
+                "details": r[2],
+                "ip": r[3],
+                "device": r[4],
+                "risk_contrib": r[5],
+                "is_suspicious": bool(r[6])
+            } for r in c.fetchall()
+        ]
+
+        # Calculate evaluated risk score
+        eval_score = 0
+        threat_class = "Normal"
+        try:
+            df = load_all_evaluated()
+            emp_row = df[df['user_id'] == uid]
+            if not emp_row.empty:
+                eval_score = int(emp_row.iloc[0]['risk_score'])
+                threat_class = emp_row.iloc[0]['threat_classification']
+        except Exception:
+            pass
+
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "user": user_info,
+            "baseline": baseline_info,
+            "session": session_info,
+            "risk_score": eval_score,
+            "threat_classification": threat_class,
+            "recent_events": recent_events,
+            "policies": [
+                {"id": "POL-001", "name": "Continuous UEBA Behavioral Baseline Verification", "status": "Enforcing", "level": "Strict"},
+                {"id": "POL-002", "name": "Geolocation & Impossible Travel Velocity Guard", "status": "Enforcing", "level": "Critical"},
+                {"id": "POL-003", "name": "Removable USB Storage & Endpoint DLP Watchdog", "status": "Enforcing", "level": "Active"},
+                {"id": "POL-004", "name": "Adaptive Step-Up MFA Challenge on Anomaly", "status": "Enforcing", "level": "Real-Time"},
+                {"id": "POL-005", "name": "Least Privilege Role-Based Access Control (RBAC)", "status": "Enforcing", "level": "Level 4 Clearance"}
+            ]
+        })
+    except Exception as e:
+        return jsonify({"error": f"Invalid session token: {str(e)}"}), 401
+
+@app.route('/api/user/change-password', methods=['POST'])
+def api_user_change_password():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        data = request.json or {}
+        new_pwd = (data.get("new_password") or "").strip()
+        if len(new_pwd) < 6:
+            return jsonify({"error": "Password must be at least 6 characters"}), 400
+        
+        new_hash = hashlib.sha256(new_pwd.encode()).hexdigest()
+        conn = get_conn()
+        conn.execute("UPDATE users SET pwd_hash=? WHERE id=?", (new_hash, uid))
+        conn.commit()
+        conn.close()
+
+        log_audit(uid, payload["username"], payload["name"], payload["department"], 
+                  "Credential Update", "User updated account password and refreshed authentication token", 
+                  payload.get("ip", "127.0.0.1"), payload.get("device", "Workstation"), 0, 0)
+        return jsonify({"success": True, "message": "Password updated successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+
 @app.route('/api/auth/test-sms', methods=['POST'])
 def api_test_sms():
     data = request.json or {}

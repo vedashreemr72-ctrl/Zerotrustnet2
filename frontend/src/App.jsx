@@ -11,13 +11,14 @@ import AuditLogs from './pages/AuditLogs';
 import Sandbox from './pages/Sandbox';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import Reports from './pages/Reports';
+import Profile from './pages/Profile';
 import NotificationCenter from './components/NotificationCenter';
 import GlobalHeader from './components/GlobalHeader';
 
 import { 
   LayoutDashboard, Users, AlertTriangle, ShieldAlert, Cpu, Zap, 
   TrendingUp, FileText, HelpCircle, LogOut, Clock, ShieldCheck,
-  Sun, Moon, Monitor, Smartphone, Menu, X
+  Sun, Moon, Monitor, Smartphone, Menu, X, User
 } from 'lucide-react';
 
 export default function App() {
@@ -183,6 +184,16 @@ export default function App() {
 
   // Render Page Content
   const renderContent = () => {
+    if (page === 'profile') {
+      return (
+        <Profile 
+          token={token} 
+          user={user} 
+          onBack={() => setPage(user.role === 'admin' ? 'dashboard' : 'emp_dashboard')} 
+        />
+      );
+    }
+
     if (user.role === 'admin') {
       const validAdminPages = ['dashboard', 'ueba', 'incidents', 'policies', 'copilot', 'simulation', 'forecast', 'audit', 'reports', 'sandbox'];
       const activePage = validAdminPages.includes(page) ? page : 'dashboard';
@@ -431,7 +442,11 @@ export default function App() {
           </div>
         </div>
 
-        <div style={{ fontSize: '0.72rem', color: '#3d5470', marginBottom: '0.8rem', padding: '0 6px' }}>
+        <div 
+          onClick={() => handlePageSelect('profile')}
+          title="Click to view Zero Trust Profile"
+          style={{ fontSize: '0.72rem', color: '#3d5470', marginBottom: '0.8rem', padding: '6px 8px', cursor: 'pointer', borderRadius: '6px', transition: 'background 0.2s', background: page === 'profile' ? 'rgba(0, 245, 255, 0.08)' : 'transparent' }}
+        >
           Logged in as <b style={{ color: '#8aafc8' }}>{user.name}</b>
           <div style={{ fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px', color: '#4a6275' }}>
             {user.role === 'admin' ? 'Admin / SOC Analyst' : `${user.department} Department`}
@@ -443,6 +458,9 @@ export default function App() {
             <>
               <button className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('dashboard')}>
                 <LayoutDashboard size={16} /> SOC Dashboard
+              </button>
+              <button className={`nav-item ${page === 'profile' ? 'active' : ''}`} onClick={() => handlePageSelect('profile')}>
+                <User size={16} /> Identity Profile
               </button>
               <button className={`nav-item ${page === 'ueba' ? 'active' : ''}`} onClick={() => handlePageSelect('ueba')}>
                 <Users size={16} /> Threat Detection & UEBA
@@ -476,6 +494,9 @@ export default function App() {
             <>
               <button className={`nav-item ${page === 'emp_dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_dashboard')}>
                 <LayoutDashboard size={16} /> My Portal
+              </button>
+              <button className={`nav-item ${page === 'profile' ? 'active' : ''}`} onClick={() => handlePageSelect('profile')}>
+                <User size={16} /> My Security Profile
               </button>
               <button className={`nav-item ${page === 'emp_timeline' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_timeline')}>
                 <Clock size={16} /> My Session Timeline
@@ -511,6 +532,7 @@ export default function App() {
           mobileNavOpen={mobileNavOpen}
           onToggleMobileNav={handleToggleMobileNav}
           onLogout={handleLogout}
+          onNavigatePage={handlePageSelect}
         />
 
         {renderContent()}

@@ -14,7 +14,8 @@ export default function GlobalHeader({
   onToggleTheme, 
   mobileNavOpen, 
   onToggleMobileNav,
-  onLogout 
+  onLogout,
+  onNavigatePage
 }) {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   
@@ -66,6 +67,7 @@ export default function GlobalHeader({
       case 'emp_dashboard': return 'Employee Security Portal';
       case 'emp_timeline': return 'Session Activity Timeline';
       case 'emp_security': return 'Security Standing & Guardrails';
+      case 'profile': return 'Zero Trust Identity Profile & Security Clearance';
       default: return 'ZeroTrustNet Platform';
     }
   };
@@ -134,8 +136,16 @@ export default function GlobalHeader({
 
           {/* User Profile Pill & Quick Logout */}
           {user && (
-            <div className="hdr-user-pill">
-              <div className="user-avatar">
+            <div 
+              className="hdr-user-pill clickable"
+              onClick={() => onNavigatePage && onNavigatePage('profile')}
+              title="Click to view Zero Trust Identity Profile & Security Clearance"
+              style={{ cursor: 'pointer' }}
+            >
+              <div 
+                className="user-avatar"
+                title="View Profile"
+              >
                 {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
               </div>
               <div className="user-info">
@@ -146,7 +156,10 @@ export default function GlobalHeader({
                 <button 
                   type="button" 
                   className="hdr-logout-btn" 
-                  onClick={onLogout}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onLogout();
+                  }}
                   title="Log out session"
                 >
                   <LogOut size={14} />
