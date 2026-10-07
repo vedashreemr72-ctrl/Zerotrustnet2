@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 html {
-  font-size: 18.5px;
+  font-size: 14.5px;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -139,11 +139,11 @@ body::before {
 
 /* 📁 SIDEBAR SYSTEM */
 .zt-sidebar {
-  width: var(--sidebar-width, 295px);
-  min-width: var(--sidebar-width, 295px);
+  width: var(--sidebar-width, 260px);
+  min-width: var(--sidebar-width, 260px);
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-subtle);
-  padding: 1.5rem 1rem;
+  padding: 1.25rem 0.85rem;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -416,13 +416,13 @@ body.resizing-sidebar {
 /* 💻 MAIN AREA */
 .zt-main-content {
   flex-grow: 1;
-  padding: 2.2rem;
+  padding: 1.5rem 1.8rem;
   overflow-y: auto;
   box-sizing: border-box;
 }
 
 .zt-title {
-  font-size: 2.25rem;
+  font-size: 1.85rem;
   font-weight: 800;
   background: linear-gradient(120deg, #00f5ff 0%, #0080ff 60%, #7b2fff 100%);
   -webkit-background-clip: text;
@@ -435,18 +435,18 @@ body.resizing-sidebar {
 
 .zt-subtitle {
   color: #3d5470;
-  font-size: 0.88rem;
-  letter-spacing: 2px;
+  font-size: 0.8rem;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
 }
 
 .zt-section-title {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: #8aafc8;
   letter-spacing: 0.5px;
-  margin: 1.8rem 0 0.8rem;
+  margin: 1.2rem 0 0.6rem;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -457,8 +457,8 @@ body.resizing-sidebar {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: 12px;
-  padding: 1.4rem;
-  margin-bottom: 1rem;
+  padding: 1.15rem;
+  margin-bottom: 0.85rem;
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(12px);
   transition: border-color 0.25s, box-shadow 0.25s, transform 0.2s, background 0.3s ease;
@@ -572,6 +572,45 @@ body.resizing-sidebar {
 .zt-badge.bm { background: rgba(234,179,8,0.12);  color: #eab308; border: 1px solid rgba(234,179,8,0.3); }
 .zt-badge.bl { background: rgba(34,197,94,0.12);  color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
 .zt-badge.bi { background: rgba(0,245,255,0.08);  color: #00f5ff; border: 1px solid rgba(0,245,255,0.2); }
+
+/* 📋 FORM INPUTS & SELECTS */
+.zt-select, select.zt-select {
+  background: var(--bg-card-elevated, #0a163c) !important;
+  color: var(--text-heading, #f1f5f9) !important;
+  border: 1px solid var(--border-card, rgba(0, 245, 255, 0.25)) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  font-size: 0.88rem !important;
+  font-family: inherit !important;
+  outline: none !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+  min-height: 40px;
+}
+
+.zt-select:focus, select.zt-select:focus {
+  border-color: var(--accent-cyan, #00f5ff) !important;
+  box-shadow: 0 0 12px rgba(0, 245, 255, 0.3) !important;
+}
+
+.zt-select option {
+  background: #060e2a !important;
+  color: #c8d6e8 !important;
+  padding: 8px !important;
+}
+
+[data-theme="light"] .zt-select, [data-theme="light"] select.zt-select {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="light"] .zt-select option {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
 
 /* 📉 RISK SCORE PROGRESS BAR */
 .rb-wrap {

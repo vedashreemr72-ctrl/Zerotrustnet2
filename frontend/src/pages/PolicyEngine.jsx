@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Plus, ToggleLeft, ToggleRight, Info } from 'lucide-react';
+import { Shield, Plus, ToggleLeft, ToggleRight, Trash2, Info } from 'lucide-react';
 
 export default function PolicyEngine({ token }) {
   const [policies, setPolicies] = useState([]);
@@ -43,6 +43,23 @@ export default function PolicyEngine({ token }) {
       if (!response.ok) {
         const res = await response.json();
         throw new Error(res.error || 'Toggle failed');
+      }
+      fetchPolicies();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeletePolicy = async (id, polName) => {
+    if (!window.confirm(`Are you sure you want to remove policy: "${polName}"?`)) return;
+    try {
+      const response = await fetch(`/api/admin/policies/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        const res = await response.json();
+        throw new Error(res.error || 'Delete failed');
       }
       fetchPolicies();
     } catch (err) {
@@ -138,12 +155,24 @@ export default function PolicyEngine({ token }) {
                       </div>
                       <div style={{ fontSize: '0.78rem', color: '#8aafc8', marginTop: '4px' }}>{pol.description}</div>
                     </div>
-                    <button 
-                      onClick={() => handleToggle(pol.id)}
-                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isActive ? '#22c55e' : '#3d5470' }}
-                    >
-                      {isActive ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button 
+                        onClick={() => handleToggle(pol.id)}
+                        title={isActive ? 'Deactivate policy' : 'Activate policy'}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isActive ? '#22c55e' : '#3d5470' }}
+                      >
+                        {isActive ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
+                      </button>
+                      <button
+                        onClick={() => handleDeletePolicy(pol.id, pol.name)}
+                        title="Delete policy"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', transition: 'color 0.2s', padding: '4px' }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = '#64748b'}
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
 
                   <div style={{ marginTop: '0.8rem', fontSize: '0.78rem' }}>

@@ -82,11 +82,14 @@ export default function AICopilot({ token }) {
       <div className="zt-title">AI Security Copilot</div>
       <div className="zt-subtitle">Explainable Artificial Intelligence · Incident Triage · Natural Language Explainer</div>
 
-      <div style={{ marginBottom: '1.2rem' }}>
-        <label style={{ fontSize: '0.8rem', color: '#4a6275', display: 'block', marginBottom: '4px' }}>Target Employee for Copilot Assessment</label>
+      <div style={{ marginBottom: '1.25rem', maxWidth: '460px' }}>
+        <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+          Target Employee for Copilot Assessment
+        </label>
         <select 
           className="zt-select" 
           value={selectedIdx} 
+          style={{ width: '100%' }}
           onChange={(e) => {
             setSelectedIdx(Number(e.target.value));
             setChatLog([

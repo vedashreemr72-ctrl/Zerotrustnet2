@@ -8,7 +8,6 @@ import AICopilot from './pages/AICopilot';
 import AttackSimulation from './pages/AttackSimulation';
 import Forecast from './pages/Forecast';
 import AuditLogs from './pages/AuditLogs';
-import Sandbox from './pages/Sandbox';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
@@ -266,7 +265,7 @@ export default function App() {
     }
 
     if (user.role === 'admin') {
-      const validAdminPages = ['dashboard', 'ueba', 'incidents', 'policies', 'copilot', 'simulation', 'forecast', 'audit', 'reports', 'sandbox'];
+      const validAdminPages = ['dashboard', 'ueba', 'incidents', 'policies', 'copilot', 'simulation', 'forecast', 'audit', 'reports'];
       const activePage = validAdminPages.includes(page) ? page : 'dashboard';
 
       return (
@@ -297,9 +296,6 @@ export default function App() {
           </div>
           <div style={{ display: activePage === 'reports' ? 'block' : 'none' }}>
             <Reports token={token} />
-          </div>
-          <div style={{ display: activePage === 'sandbox' ? 'block' : 'none' }}>
-            <Sandbox token={token} />
           </div>
         </>
       );
@@ -468,7 +464,7 @@ export default function App() {
         {!isSidebarCollapsed && (
           <div className="sb-logo" style={{ marginTop: '0.1rem', paddingTop: '0.2rem', paddingBottom: '0.8rem' }}>
             <div className="tagline" style={{ fontSize: '0.66rem', lineHeight: '1.25', color: '#38bdf8', marginTop: '1px', whiteSpace: 'normal' }}>
-              AI Zero Trust Access Verification & Insider Threat Platform
+              Multi-algorithmic framework for Insider threat detection
             </div>
             <div className="status" style={{ marginTop: '6px' }}>
               <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', boxShadow: '0 0 5px #22c55e' }}></span>
@@ -548,9 +544,6 @@ export default function App() {
               </button>
               <button className={`nav-item ${page === 'reports' ? 'active' : ''}`} onClick={() => handlePageSelect('reports')} title="Reports & PDF Exporter">
                 <FileText size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Reports & PDF Exporter</span>}
-              </button>
-              <button className={`nav-item ${page === 'sandbox' ? 'active' : ''}`} onClick={() => handlePageSelect('sandbox')} title="Risk Sandbox">
-                <HelpCircle size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Risk Sandbox</span>}
               </button>
             </>
           ) : (

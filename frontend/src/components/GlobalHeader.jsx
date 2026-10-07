@@ -21,7 +21,6 @@ export default function GlobalHeader({
   
   // Realistic Enterprise Preferences
   const [density, setDensity] = useState(() => localStorage.getItem('ztn_density') || 'comfortable');
-  const [refreshRate, setRefreshRate] = useState(() => localStorage.getItem('ztn_refresh_rate') || '15');
   const [audioAlerts, setAudioAlerts] = useState(() => localStorage.getItem('ztn_audio_alerts') !== 'false');
   const [sessionLock, setSessionLock] = useState(() => localStorage.getItem('ztn_session_lock') || '30');
 
@@ -32,11 +31,6 @@ export default function GlobalHeader({
 
   const handleDensityChange = (val) => {
     setDensity(val);
-  };
-
-  const handleRefreshRateChange = (val) => {
-    setRefreshRate(val);
-    localStorage.setItem('ztn_refresh_rate', val);
   };
 
   const handleAudioToggle = () => {
@@ -63,7 +57,6 @@ export default function GlobalHeader({
       case 'forecast': return 'Risk Projections & Forecast';
       case 'audit': return 'Immutable Audit Logs';
       case 'reports': return 'Compliance Reports & PDF';
-      case 'sandbox': return 'Threat Sandbox';
       case 'emp_dashboard': return 'Employee Security Portal';
       case 'emp_timeline': return 'Session Activity Timeline';
       case 'emp_security': return 'Security Standing & Guardrails';
@@ -120,19 +113,24 @@ export default function GlobalHeader({
             )}
           </button>
 
-          {/* Unified Realistic Settings Icon */}
-          <button 
-            type="button" 
-            className="hdr-icon-btn settings-btn"
-            onClick={() => setShowSettingsModal(true)}
-            title="Platform & SOC Settings"
-            aria-label="Open Settings"
-          >
-            <Settings size={18} />
-          </button>
+          {/* Admin / SOC Analyst Only Controls (Settings & Notification Stream) */}
+          {user && (user.role === 'admin' || user.emp_type === 'Admin') && (
+            <>
+              {/* Unified Realistic Settings Icon */}
+              <button 
+                type="button" 
+                className="hdr-icon-btn settings-btn"
+                onClick={() => setShowSettingsModal(true)}
+                title="Platform & SOC Settings"
+                aria-label="Open Settings"
+              >
+                <Settings size={18} />
+              </button>
 
-          {/* Notification Center */}
-          {token && <NotificationCenter token={token} theme={theme} />}
+              {/* Notification Center */}
+              {token && <NotificationCenter token={token} theme={theme} />}
+            </>
+          )}
 
           {/* User Profile Pill & Quick Logout */}
           {user && (
@@ -170,14 +168,14 @@ export default function GlobalHeader({
         </div>
       </header>
 
-      {/* Realistic Enterprise Settings Modal */}
-      {showSettingsModal && (
+      {/* Realistic Enterprise Settings Modal (Admin Only) */}
+      {showSettingsModal && user && (user.role === 'admin' || user.emp_type === 'Admin') && (
         <div className="zt-modal-overlay" onClick={() => setShowSettingsModal(false)}>
           <div className="zt-settings-modal" onClick={(e) => e.stopPropagation()}>
             <div className="settings-modal-header">
               <div className="settings-title">
                 <Settings size={20} className="icon-cyan" />
-                <span>Platform & SOC Settings</span>
+                <span>System & Display Settings</span>
               </div>
               <button 
                 type="button" 
@@ -193,7 +191,7 @@ export default function GlobalHeader({
               <div className="settings-section">
                 <div className="section-label">
                   <Sparkles size={16} className="icon-cyan" />
-                  <span>Theme Appearance</span>
+                  <span>Color Theme</span>
                 </div>
                 <div className="theme-options-grid">
                   <div 
@@ -211,9 +209,9 @@ export default function GlobalHeader({
                     </div>
                     <div className="theme-card-info">
                       <div className="theme-name">
-                        <Moon size={15} /> Dark Theme (SOC Cyber)
+                        <Moon size={15} /> Dark Mode
                       </div>
-                      <div className="theme-desc">High-contrast cyber dark with neon accents for SOC monitoring</div>
+                      <div className="theme-desc">Dark interface with blue accents for low-light viewing</div>
                     </div>
                     {theme === 'dark' && <div className="selected-check"><Check size={14} /></div>}
                   </div>
@@ -233,9 +231,9 @@ export default function GlobalHeader({
                     </div>
                     <div className="theme-card-info">
                       <div className="theme-name">
-                        <Sun size={15} /> Light Theme (Enterprise)
+                        <Sun size={15} /> Light Mode
                       </div>
-                      <div className="theme-desc">Clean, modern enterprise layout for reports and audit clarity</div>
+                      <div className="theme-desc">Bright, clean layout for easy daytime reading</div>
                     </div>
                     {theme === 'light' && <div className="selected-check"><Check size={14} /></div>}
                   </div>
@@ -246,7 +244,7 @@ export default function GlobalHeader({
               <div className="settings-section">
                 <div className="section-label">
                   <Sliders size={16} className="icon-cyan" />
-                  <span>SOC Interface Density</span>
+                  <span>Layout Spacing</span>
                 </div>
                 <div className="density-options-grid">
                   <div 
@@ -254,9 +252,9 @@ export default function GlobalHeader({
                     onClick={() => handleDensityChange('comfortable')}
                   >
                     <div className="density-title">
-                      <Monitor size={16} /> Comfortable (Standard)
+                      <Monitor size={16} /> Comfortable
                     </div>
-                    <div className="density-desc">Spacious balanced card padding and relaxed table spacing</div>
+                    <div className="density-desc">Relaxed spacing with extra room between items</div>
                     {density === 'comfortable' && <div className="selected-check"><Check size={14} /></div>}
                   </div>
 
@@ -265,48 +263,23 @@ export default function GlobalHeader({
                     onClick={() => handleDensityChange('compact')}
                   >
                     <div className="density-title">
-                      <Sliders size={16} /> Compact (High-Density SOC)
+                      <Sliders size={16} /> Compact
                     </div>
-                    <div className="density-desc">Tighter telemetry rows and metrics for multi-monitor desks</div>
+                    <div className="density-desc">Fits more items on screen with tighter rows</div>
                     {density === 'compact' && <div className="selected-check"><Check size={14} /></div>}
                   </div>
                 </div>
               </div>
 
-              {/* 3. Real-Time Telemetry Polling Rate */}
-              <div className="settings-section">
-                <div className="section-label">
-                  <Activity size={16} className="icon-cyan" />
-                  <span>Telemetry & SIEM Refresh Rate</span>
-                </div>
-                <div className="refresh-rate-pills">
-                  {[
-                    { val: '5', label: '5s (Real-Time SIEM)' },
-                    { val: '15', label: '15s (Balanced)' },
-                    { val: '30', label: '30s (Eco Mode)' }
-                  ].map(r => (
-                    <button
-                      key={r.val}
-                      type="button"
-                      className={`refresh-pill ${refreshRate === r.val ? 'active' : ''}`}
-                      onClick={() => handleRefreshRateChange(r.val)}
-                    >
-                      {refreshRate === r.val && <Check size={13} />}
-                      <span>{r.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 4. Threat Alert Audio & Session Timeout */}
+              {/* 3. Threat Alert Audio & Session Timeout */}
               <div className="settings-section settings-toggles-row">
                 <div className="setting-toggle-card" onClick={handleAudioToggle}>
                   <div className="toggle-info">
                     <div className="toggle-title">
                       {audioAlerts ? <Volume2 size={16} className="icon-cyan" /> : <VolumeX size={16} className="icon-muted" />}
-                      <span>Critical (P1) Threat Audio Alert</span>
+                      <span>Threat Sound Alert</span>
                     </div>
-                    <div className="toggle-sub">Sound notification chime when critical threat triggers</div>
+                    <div className="toggle-sub">Play sound notification when high-risk threats occur</div>
                   </div>
                   <div className={`switch-toggle ${audioAlerts ? 'on' : 'off'}`}>
                     <div className="switch-thumb"></div>
@@ -317,9 +290,9 @@ export default function GlobalHeader({
                   <div className="select-info">
                     <div className="select-title">
                       <Clock size={16} className="icon-cyan" />
-                      <span>Security Session Inactivity Lock</span>
+                      <span>Auto-Lock After Inactivity</span>
                     </div>
-                    <div className="select-sub">Automatically lock console after idle period</div>
+                    <div className="select-sub">Automatically lock session when inactive</div>
                   </div>
                   <select 
                     className="settings-select"

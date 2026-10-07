@@ -111,15 +111,6 @@ export default function Profile({ token, user, onBack }) {
       {/* 🧭 Top Navigation & Back Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {onBack && (
-            <button 
-              onClick={onBack}
-              className="zt-btn zt-btn-sec"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '0.82rem' }}
-            >
-              <ArrowLeft size={15} /> Back to Dashboard
-            </button>
-          )}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '1.3rem' }}>🛡️</span>

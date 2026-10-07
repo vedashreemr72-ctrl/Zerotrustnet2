@@ -8,6 +8,7 @@ export default function AuditLogs({ token }) {
   const [eventTypeFilter, setEventTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [loading, setLoading] = useState(true);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState('');
 
   const fetchLogs = async () => {
@@ -56,21 +57,26 @@ export default function AuditLogs({ token }) {
     }
   };
 
-  const handleExportJSON = async () => {
+  const handleExportPDF = async () => {
     try {
-      const res = await fetch('/api/admin/audit/export?format=json', {
+      setDownloadingPdf(true);
+      const res = await fetch('/api/admin/audit/export?format=pdf', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const jsonData = await res.json();
-      const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+      if (!res.ok) throw new Error('Failed to generate PDF audit report');
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'ztn_audit_logs.json';
+      a.download = 'Security_Audit_Report.pdf';
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      alert(`Export failed: ${err.message}`);
+      alert(`PDF Export failed: ${err.message}`);
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -87,13 +93,13 @@ export default function AuditLogs({ token }) {
 
   return (
     <div>
-      <div className="zt-title">Audit Trail & Compliance Reports</div>
-      <div className="zt-subtitle">Immutable Cryptographic Event Trail · AES-256 Encrypted Field Storage · Exportable Compliance Audit</div>
+      <div className="zt-title">Audit Trail & Activity Reports</div>
+      <div className="zt-subtitle">Permanent record of employee logins, file transfers, and system activities</div>
 
-      {/* Encryption & Integrity Card */}
+      {/* Security & Integrity Card */}
       {encryptionInfo && (
         <div className="zt-card" style={{
-          padding: '0.85rem 1.2rem',
+          padding: '0.75rem 1.1rem',
           marginBottom: '1rem',
           background: 'rgba(16, 185, 129, 0.06)',
           border: '1px solid rgba(16, 185, 129, 0.2)',
@@ -104,20 +110,20 @@ export default function AuditLogs({ token }) {
           gap: '0.8rem'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Lock size={20} color="#10b981" />
+            <Lock size={18} color="#10b981" />
             <div>
-              <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '0.88rem' }}>
-                Data Encryption & Cryptographic Audit Verification
+              <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '0.86rem' }}>
+                Protected & Tamper-Proof Audit Trail
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#6ee7b7' }}>
-                Cipher Suite: <strong>{encryptionInfo.cipher_suite}</strong> · Compliance: {encryptionInfo.policy_compliance}
+              <div style={{ fontSize: '0.74rem', color: '#6ee7b7' }}>
+                All activity records are encrypted and protected against unauthorized changes
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.78rem', color: '#94a3b8' }}>
-            <div>HMAC Digest: <span style={{ fontFamily: 'monospace', color: '#00f5ff' }}>{encryptionInfo.cryptographic_hash}</span></div>
-            <span className="zt-badge bl">✓ Integrity Verified</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.76rem', color: '#94a3b8' }}>
+            <div>Security ID: <span style={{ fontFamily: 'monospace', color: '#00f5ff' }}>{encryptionInfo.cryptographic_hash?.slice(0, 16)}</span></div>
+            <span className="zt-badge bl">✓ Verified Untampered</span>
           </div>
         </div>
       )}
@@ -162,8 +168,19 @@ export default function AuditLogs({ token }) {
             <button className="zt-btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={handleExportCSV}>
               <Download size={14} /> Export CSV Report
             </button>
-            <button className="zt-btn zt-btn-sec" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={handleExportJSON}>
-              <Download size={14} /> Export JSON
+            <button 
+              className="zt-btn zt-btn-sec" 
+              style={{ 
+                padding: '0.4rem 0.8rem', 
+                fontSize: '0.8rem', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '5px' 
+              }} 
+              onClick={handleExportPDF}
+              disabled={downloadingPdf}
+            >
+              <FileText size={14} /> {downloadingPdf ? 'Generating PDF...' : 'Export PDF Report'}
             </button>
           </div>
         </div>

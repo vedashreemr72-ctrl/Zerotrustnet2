@@ -278,8 +278,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   return (
     <div>
-      <div className="zt-title">ZeroTrustNet SOC & Insider Threat Command Center</div>
-      <div className="zt-subtitle">An AI-Powered Zero Trust Employee Access Verification and Insider Threat Detection Platform</div>
+      <div className="zt-title">Zerotrustnet: Multi-algorithmic framework for Insider threat detection</div>
+      <div className="zt-subtitle">Continuous Zero Trust Monitoring · Multi-Model Behavioral Anomaly Detection · SOC Command Center</div>
 
       {/* Platform Architecture & 4 Core Differentiators Banner */}
       <div className="zt-card" style={{

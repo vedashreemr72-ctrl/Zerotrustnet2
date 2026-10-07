@@ -230,12 +230,12 @@ export default function Login({
           <div className="logo" style={{ fontSize: '1.7rem', fontWeight: '800', letterSpacing: '-0.5px' }}>
             🛡️ ZeroTrustNet
           </div>
-          <div className="tagline" style={{ fontSize: '0.82rem', color: '#00f5ff', fontWeight: 'bold', marginTop: '4px', lineHeight: '1.3' }}>
-            Adaptive MFA & Continuous Insider Threat Detection Platform
+          <div className="tagline" style={{ fontSize: '0.84rem', color: '#00f5ff', fontWeight: 'bold', marginTop: '4px', lineHeight: '1.3' }}>
+            Multi-algorithmic framework for Insider threat detection
           </div>
         </div>
 
-        {/* Supabase & Zero Trust Security Indicator */}
+        {/* Zero Trust Security Indicator */}
         <div style={{
           margin: '0.9rem 0',
           padding: '0.65rem 0.85rem',
@@ -244,27 +244,14 @@ export default function Login({
           borderRadius: '8px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: '8px',
           fontSize: '0.74rem'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '1rem' }}>⚡</span>
-            <div>
-              <strong style={{ color: '#e2e8f0' }}>Zero Trust Security Engine: Active</strong>
-              <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Row Level Security (RLS) · Adaptive MFA · UEBA Risk Scoring</div>
-            </div>
+          <span style={{ fontSize: '1rem' }}>⚡</span>
+          <div>
+            <strong style={{ color: '#e2e8f0' }}>Zero Trust Security Engine: Active</strong>
+            <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Continuous Behavioral Verification · UEBA Risk Scoring</div>
           </div>
-          <span style={{ 
-            fontSize: '0.65rem', 
-            color: supabaseActive ? '#10b981' : '#38bdf8', 
-            background: supabaseActive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-            padding: '2px 8px',
-            borderRadius: '10px',
-            fontWeight: 'bold',
-            border: supabaseActive ? '1px solid #10b981' : '1px solid #38bdf8'
-          }}>
-            {supabaseActive ? 'Supabase Cloud Connected' : 'Hybrid Auth Ready'}
-          </span>
         </div>
 
         {/* Portal Role Tabs */}
@@ -493,57 +480,15 @@ export default function Login({
           borderRadius: '8px',
           fontSize: '0.72rem'
         }}>
-          <div style={{ color: '#00f5ff', fontWeight: 'bold', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ color: '#00f5ff', fontWeight: 'bold', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             <span>📡 Adaptive MFA & Insider Threat Context</span>
-            <span style={{ fontSize: '0.65rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: '4px' }}>Telemetry Active</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', color: '#88a0b8', marginBottom: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', color: '#88a0b8' }}>
             <div>• <strong>Device ID:</strong> <span style={{ color: '#00f5ff' }}>{simDeviceId}</span></div>
             <div>• <strong>Location:</strong> <span style={{ color: simLocation.includes('Bengaluru') ? '#10b981' : '#f59e0b' }}>{simLocation}</span></div>
             <div>• <strong>OS:</strong> <span style={{ color: '#10b981' }}>{osName}</span></div>
             <div>• <strong>Browser:</strong> <span style={{ color: '#10b981' }}>{browserName}</span></div>
-          </div>
-
-          {/* Quick Simulation Buttons to demonstrate Adaptive MFA */}
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '6px', marginTop: '6px' }}>
-            <div style={{ fontSize: '0.68rem', color: '#64748b', marginBottom: '4px' }}>🔬 Quick Test Scenarios (Demonstrates Adaptive Behavior):</div>
-            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-              <button 
-                type="button" 
-                className="zt-btn zt-btn-sec" 
-                style={{ fontSize: '0.66rem', padding: '2px 6px' }}
-                onClick={() => {
-                  setSimDeviceId(activeTab === 'admin' ? 'DEV-CORP-ADMIN-01' : 'DEV-55357-WIN');
-                  setSimLocation('Bengaluru, India');
-                  setError('');
-                }}
-              >
-                ✓ Corporate Device
-              </button>
-              <button 
-                type="button" 
-                className="zt-btn zt-btn-sec" 
-                style={{ fontSize: '0.66rem', padding: '2px 6px', color: '#f59e0b' }}
-                onClick={() => {
-                  setSimDeviceId(`DEV-${Math.floor(10000 + Math.random() * 90000)}-UNKNOWN`);
-                  setError('');
-                }}
-              >
-                ⚠️ Untrusted Endpoint
-              </button>
-              <button 
-                type="button" 
-                className="zt-btn zt-btn-sec" 
-                style={{ fontSize: '0.66rem', padding: '2px 6px', color: '#ec4899' }}
-                onClick={() => {
-                  setSimLocation(simLocation.includes('Bengaluru') ? 'Frankfurt, Germany' : 'Bengaluru, India');
-                  setError('');
-                }}
-              >
-                🌍 Roaming Location
-              </button>
-            </div>
           </div>
         </div>
       </div>

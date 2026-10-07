@@ -436,14 +436,11 @@ USERS_SEED = [
 BEHAVIOR_SEED = {}
 
 DEFAULT_POLICIES = [
-    {"name":"Unknown Device + Sensitive Resource + Off-Hours","conditions":'{"device_known":0,"sensitive_access":true,"off_hours":true}',"action":"Require Step-Up Authentication","description":"Trigger MFA if an unknown device accesses sensitive resources outside business hours (08:00–19:00)."},
     {"name":"Mass Download Detection","conditions":'{"downloads_gt":100}',"action":"Temporarily Suspend Account","description":"Automatically suspend account when download volume exceeds 100 files in a single session."},
-    {"name":"Impossible Travel","conditions":'{"impossible_travel_flag":1}',"action":"Lock Account + Alert SOC","description":"Immediately lock account and notify SOC team when impossible geographic travel is detected."},
-    {"name":"Dormant Account Reactivation","conditions":'{"last_login_days_ago_gt":90}',"action":"Force Re-Authentication + Audit","description":"Require full re-authentication and flag for audit when a dormant account (90+ days inactive) becomes active."},
     {"name":"Privilege Escalation","conditions":'{"privilege_escalation_flag":1}',"action":"Revoke Elevated Privileges + Alert","description":"Immediately revoke elevated privileges and alert the security team when unauthorized privilege escalation is detected."},
-    {"name":"GenAI Data Exfiltration","conditions":'{"genai_upload_mb_gt":20}',"action":"Block AI Tool Access","description":"Block access to public AI tools (ChatGPT, Gemini, etc.) when upload volume exceeds 20 MB in a session."},
-    {"name":"Multiple Failed Logins","conditions":'{"failed_logins_gt":5}',"action":"Temporary Account Lockout","description":"Temporarily lock account for 30 minutes after 5 consecutive failed login attempts."},
-    {"name":"Credential Sharing","conditions":'{"credential_sharing_flag":1}',"action":"Force Password Reset + Log","description":"Force an immediate password reset and log all sessions when concurrent logins from different devices/IPs are detected."},
+    {"name":"Unapproved USB Storage Connected","conditions":'{"usb_usage":1}',"action":"Revoke Removable Storage + Quarantine Session","description":"Block endpoint removable media and alert SOC when unapproved USB flash storage devices are connected."},
+    {"name":"Unauthorized Folder Scope Access","conditions":'{"unauthorized_folder_access":true}',"action":"Block Resource Access + Alert SOC","description":"Restrict access when an employee attempts to access directories outside their permitted departmental scope."},
+    {"name":"Unknown Device + Sensitive Resource + Off-Hours","conditions":'{"device_known":0,"sensitive_access":true,"off_hours":true}',"action":"Require Step-Up Authentication","description":"Trigger MFA if an unknown device accesses sensitive resources outside business hours (08:00–19:00)."},
 ]
 
 def _log_event(conn, user_id, username, user_name, department, event_type, event_details, ip, device, risk_contrib, is_suspicious, ts_str=None, session_id=None):
@@ -2640,24 +2637,31 @@ def admin_policies():
             pol['conditions'] = {}
         policies_list.append(pol)
 
-    # Active violations list
+    # Active violations list (Tailored for Insider Threat Detection)
     df = load_all_evaluated()
     violations = []
     for _, row in df.iterrows():
-        if row.get('impossible_travel_flag'):
-            violations.append({"Policy": "Impossible Travel", "User": row['name'], "Action": "Lock Account + Alert SOC"})
+        # 1. Unapproved USB Storage Connection (Removable media exfiltration)
+        if row.get('usb_usage', 0) == 1:
+            violations.append({"Policy": "Unapproved USB Storage Connected", "User": row['name'], "Action": "Revoke Removable Storage + Quarantine Session"})
+        # 2. Privilege Escalation (Insider permission escalation)
         if row.get('privilege_escalation_flag'):
             violations.append({"Policy": "Privilege Escalation", "User": row['name'], "Action": "Revoke Elevated Privileges + Alert"})
+        # 3. Mass Download Detection (Bulk file download before departure)
         if row.get('downloads', 0) > 100:
             violations.append({"Policy": "Mass Download Detection", "User": row['name'], "Action": "Temporarily Suspend Account"})
-        if row.get('genai_upload_mb', 0) > 20:
-            violations.append({"Policy": "GenAI Data Exfiltration", "User": row['name'], "Action": "Block AI Tool Access"})
-        if row.get('last_login_days_ago', 0) > 90:
-            violations.append({"Policy": "Dormant Account Reactivation", "User": row['name'], "Action": "Force Re-Authentication + Audit"})
-        if row.get('credential_sharing_flag'):
-            violations.append({"Policy": "Credential Sharing", "User": row['name'], "Action": "Force Password Reset + Log"})
-        if row.get('failed_logins', 0) > 5:
-            violations.append({"Policy": "Multiple Failed Logins", "User": row['name'], "Action": "Temporary Account Lockout"})
+        # 4. Unauthorized Scope Access (Employee accessing cross-department data)
+        expected = str(row.get('expected_folders', '') or '')
+        accessed = str(row.get('accessed_folders', '') or '')
+        if expected and accessed:
+            for acc in accessed.split(','):
+                acc_clean = acc.strip()
+                if acc_clean and acc_clean not in expected:
+                    violations.append({"Policy": "Unauthorized Folder Scope Access", "User": row['name'], "Action": "Block Resource Access + Alert SOC"})
+                    break
+        # 5. Off-Hours Access from Unknown Device
+        if (row.get('login_time', 9) < 7 or row.get('login_time', 9) > 20) and row.get('device_known', 1) == 0:
+            violations.append({"Policy": "Unknown Device + Off-Hours Access", "User": row['name'], "Action": "Require Step-Up Authentication"})
 
     return jsonify({
         "policies": policies_list,
@@ -2695,6 +2699,33 @@ def admin_create_policy():
               "Policy Created", f"New Policy: {name}", payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
 
     return jsonify({"success": True})
+
+@app.route('/api/admin/policies/<id>', methods=['DELETE'])
+def admin_delete_policy(id):
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        creator = payload["username"]
+    except Exception:
+        return jsonify({"error": "Invalid token"}), 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT name FROM policies WHERE id=?", (id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Policy not found"}), 404
+
+    pol_name = row[0]
+    conn.execute("DELETE FROM policies WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
+
+    log_audit(payload["user_id"], creator, payload["name"], payload["department"],
+              "Policy Deleted", f"Removed Policy: {pol_name}", payload["ip"], payload["device"], 0, 0, session_id=payload["session_id"])
+
+    return jsonify({"success": True, "message": f"Policy '{pol_name}' deleted."})
 
 @app.route('/api/admin/policies/<id>/toggle', methods=['POST'])
 def admin_toggle_policy(id):
@@ -3077,8 +3108,8 @@ def admin_live_activity():
     return jsonify(siem_stream)
 
 @app.route('/api/admin/reports/download', methods=['GET'])
-def admin_download_report():
-    report_type = request.args.get("type", "weekly_security").lower()
+def admin_download_report(report_type_override=None):
+    report_type = (report_type_override or request.args.get("type", "weekly_security")).lower()
     
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -3914,6 +3945,9 @@ def admin_audit_export():
     conn.close()
 
     data = [dict(zip(cols, r)) for r in rows]
+
+    if fmt == "pdf":
+        return admin_download_report(report_type_override="audit")
 
     if fmt == "csv":
         output = "ID,Timestamp,User,Department,EventType,Details,IP,Device,IsSuspicious,RiskContrib\n"
