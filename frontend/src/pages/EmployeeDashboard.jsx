@@ -1012,13 +1012,6 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
                 >
                   <Terminal size={14} /> Cloud Terminal
                 </button>
-                <button
-                  className="zt-btn zt-btn-sec"
-                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  onClick={() => setActiveTab('security')}
-                >
-                  <Shield size={14} /> Security Telemetry
-                </button>
               </div>
             </div>
           </div>
