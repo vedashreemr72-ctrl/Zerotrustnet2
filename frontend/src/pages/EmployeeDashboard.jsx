@@ -88,6 +88,58 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
   const [appealsList, setAppealsList] = useState([]);
   const [appealSubmitting, setAppealSubmitting] = useState(false);
 
+  const fetchAppeals = async () => {
+    try {
+      const res = await fetch('/api/employee/appeals', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const appealData = await res.json();
+        setAppealsList(appealData.appeals || []);
+      }
+    } catch (e) {
+      console.warn('Failed to load appeals:', e);
+    }
+  };
+
+  const handleAppealSubmit = async (e) => {
+    e.preventDefault();
+    if (!appealReason.trim()) {
+      alert("Please provide a business justification for requesting additional file access.");
+      return;
+    }
+    setAppealSubmitting(true);
+    try {
+      const res = await fetch('/api/employee/appeal-access', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          reason: appealReason,
+          requested_files: parseInt(appealRequestedFiles) || 10
+        })
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Failed to submit appeal');
+
+      setActionAlert({ type: 'success', msg: `✅ ${resData.message}` });
+      setAppealReason('');
+      fetchAppeals();
+      fetchDashboardData();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setAppealSubmitting(false);
+    }
+  };
+
+  // ==========================================
+  // EMPLOYEE WORKSPACE STATE & METHODS
+  // ==========================================
+  const [activeTab, setActiveTab] = useState('workspace'); // 'workspace', 'tasks', 'files', 'security'
+
   // 🔐 Workspace Cryptographic Authentication State
   const [workspaceAuthenticated, setWorkspaceAuthenticated] = useState(() => {
     try {
@@ -189,58 +241,6 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
     setWorkspaceAuthError('');
     loadWorkspaceTotp();
   };
-
-  const fetchAppeals = async () => {
-    try {
-      const res = await fetch('/api/employee/appeals', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const appealData = await res.json();
-        setAppealsList(appealData.appeals || []);
-      }
-    } catch (e) {
-      console.warn('Failed to load appeals:', e);
-    }
-  };
-
-  const handleAppealSubmit = async (e) => {
-    e.preventDefault();
-    if (!appealReason.trim()) {
-      alert("Please provide a business justification for requesting additional file access.");
-      return;
-    }
-    setAppealSubmitting(true);
-    try {
-      const res = await fetch('/api/employee/appeal-access', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          reason: appealReason,
-          requested_files: parseInt(appealRequestedFiles) || 10
-        })
-      });
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || 'Failed to submit appeal');
-
-      setActionAlert({ type: 'success', msg: `✅ ${resData.message}` });
-      setAppealReason('');
-      fetchAppeals();
-      fetchDashboardData();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setAppealSubmitting(false);
-    }
-  };
-
-  // ==========================================
-  // EMPLOYEE WORKSPACE STATE & METHODS
-  // ==========================================
-  const [activeTab, setActiveTab] = useState('workspace'); // 'workspace', 'tasks', 'files', 'security'
   
   // Tasks state
   const defaultWorkspaceTasks = [
