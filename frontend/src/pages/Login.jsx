@@ -197,9 +197,9 @@ export default function Login({
       setPassword('admin123');
       setSimDeviceId('DEV-CORP-ADMIN-01');
     } else {
-      setLoginIdentifier('ravi');
-      setPassword('emp123');
-      setSimDeviceId('DEV-55357-WIN');
+      setLoginIdentifier('');
+      setPassword('');
+      setSimDeviceId('DEV-CORP-EMP-01');
     }
   };
 
@@ -354,7 +354,7 @@ export default function Login({
               <input 
                 type="text" 
                 className="zt-input" 
-                placeholder={activeTab === 'admin' ? 'e.g. admin or admin@zerotrustnet.io' : 'e.g. ravi or ravi@zerotrustnet.io'} 
+                placeholder={activeTab === 'admin' ? 'e.g. admin or admin@zerotrustnet.io' : 'e.g. employee username or email'} 
                 value={loginIdentifier}
                 onChange={(e) => setLoginIdentifier(e.target.value)}
                 required

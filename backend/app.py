@@ -412,15 +412,7 @@ def init_db():
         ]
         c.executemany("INSERT INTO devices VALUES (?,?,?,?,?,?,?,?,?,?)", devs)
 
-    # Seed Alerts if empty
-    c.execute("SELECT COUNT(*) FROM alerts")
-    if c.fetchone()[0] == 0:
-        alrts = [
-            (str(uuid.uuid4()), "ALT-901", "U002", "Ravi Sharma", "Finance", "P1", "Mass Download & USB Storage Mounted", "🔴 Critical", 85, datetime.now().isoformat(), "Active"),
-            (str(uuid.uuid4()), "ALT-902", "U001", "Priya Patel", "Engineering", "P2", "Anomalous Off-Hours Payroll Access", "🟠 High", 65, datetime.now().isoformat(), "Active")
-        ]
-        c.executemany("INSERT INTO alerts VALUES (?,?,?,?,?,?,?,?,?,?,?)", alrts)
-
+    # Alerts table initialized empty for genuine security breaches only
     conn.commit()
     conn.close()
 
@@ -431,12 +423,9 @@ def hash_pwd(p):
 
 USERS_SEED = [
     {"username":"admin",           "pwd":"admin123",  "name":"System Administrator",   "dept":"IT Security", "emp_type":"Admin",         "role":"admin"},
-    {"username":"ravi",            "pwd":"emp123",    "name":"Ravi Sharma",             "dept":"Engineering", "emp_type":"Employee",      "role":"employee"},
 ]
 
-BEHAVIOR_SEED = {
-    "ravi":           {"login_time":10,"file_access_count":2,"failed_logins":0,"device_known":1,"downloads":1,"sensitive_files":0,"resignation_flag":0,"genai_upload_mb":0.0,"external_uploads":0,"usb_usage":0,"email_attachments":0,"printing_events":0,"last_login_days_ago":0,"last_login_location":"Bengaluru","current_login_location":"Bengaluru","impossible_travel_flag":0,"impossible_travel_details":"","credential_sharing_flag":0,"credential_sharing_details":"","burnout_stress_score":10,"burnout_details":"","shadow_it_flag":0,"shadow_it_details":"","ai_risk_flag":0,"ai_risk_details":"","unusual_collaboration_flag":0,"unusual_collaboration_details":"","privilege_escalation_flag":0,"privilege_escalation_details":"","forecast_today":5,"forecast_next_week":5,"forecast_next_month":5,"baseline_login_time":"09:00","baseline_device":"Office Laptop","baseline_location":"Bengaluru","baseline_file_access":15,"accessed_folders":"Engineering","expected_folders":"Engineering","business_impact_rupees":0,"mitre_techniques":"None","mitre_confidence":0},
-}
+BEHAVIOR_SEED = {}
 
 DEFAULT_POLICIES = [
     {"name":"Unknown Device + Sensitive Resource + Off-Hours","conditions":'{"device_known":0,"sensitive_access":true,"off_hours":true}',"action":"Require Step-Up Authentication","description":"Trigger MFA if an unknown device accesses sensitive resources outside business hours (08:00–19:00)."},
@@ -456,23 +445,21 @@ def _log_event(conn, user_id, username, user_name, department, event_type, event
               (str(uuid.uuid4()), user_id, username, user_name, department,
                ts, event_type, event_details, ip, device, risk_contrib, is_suspicious, session_id or ""))
 
-    # Automatically dispatch real-time enterprise notification for every activity
-    try:
-        nid = str(uuid.uuid4())
-        sev = "Critical" if (is_suspicious and (risk_contrib or 0) >= 15) else (
-            "High" if (is_suspicious or (risk_contrib or 0) > 5) else (
-                "Medium" if (risk_contrib or 0) > 0 else "Low"
-            )
-        )
-        channel = "SMS/Push" if sev in ["Critical", "High"] else "System"
-        subj = f"[{sev.upper()}] {event_type} - {user_name or username} ({department or 'General'})"
-        msg = f"{user_name or username} ({department or 'Staff'}) performed '{event_type}' on {device or 'Authorized Device'} [IP: {ip or '127.0.0.1'}]. {event_details}"
-        c.execute("""
-            INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
-            VALUES (?,?,?,?,?,?,?,?,?,?,0)
-        """, (nid, user_id or "system", username or "system", channel, "soc-alert@zerotrustnet.io", subj, msg, sev, ts, "Dispatched"))
-    except Exception:
-        pass
+    # Only dispatch enterprise notifications for genuinely suspicious threats (risk >= 15)
+    # Routine activities (login, logout, allowed file access) are recorded in audit logs without notification spam
+    if is_suspicious and (risk_contrib or 0) >= 15:
+        try:
+            nid = str(uuid.uuid4())
+            sev = "Critical" if (risk_contrib or 0) >= 30 else "High"
+            channel = "SMS/Push"
+            subj = f"[{sev.upper()}] {event_type} - {user_name or username} ({department or 'General'})"
+            msg = f"{user_name or username} ({department or 'Staff'}) triggered '{event_type}' on {device or 'Authorized Device'} [IP: {ip or '127.0.0.1'}]. {event_details}"
+            c.execute("""
+                INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+                VALUES (?,?,?,?,?,?,?,?,?,?,0)
+            """, (nid, user_id or "system", username or "system", channel, "soc-alert@zerotrustnet.io", subj, msg, sev, ts, "Dispatched"))
+        except Exception:
+            pass
 
 def seed_db():
     conn = get_conn()
@@ -484,66 +471,12 @@ def seed_db():
 
     now_str = datetime.now().isoformat()
 
-    # Create users
+    # Create admin user
     for u in USERS_SEED:
         uid = str(uuid.uuid4())
         c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?)",
                   (uid, u["username"], hash_pwd(u["pwd"]),
                    u["name"], u["dept"], u["emp_type"], u["role"], 1, now_str))
-
-        if u["role"] == "employee" and u["username"] in BEHAVIOR_SEED:
-            bd = BEHAVIOR_SEED[u["username"]]
-            c.execute("""INSERT OR IGNORE INTO behavior_data VALUES
-                (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (uid,
-                 bd["login_time"], bd["file_access_count"], bd["failed_logins"], bd["device_known"],
-                 bd["downloads"], bd["sensitive_files"], bd["resignation_flag"], bd["genai_upload_mb"],
-                 bd["external_uploads"], bd["usb_usage"], bd["email_attachments"], bd["printing_events"],
-                 bd["last_login_days_ago"], bd["last_login_location"], bd["current_login_location"],
-                 bd["impossible_travel_flag"], bd["impossible_travel_details"],
-                 bd["credential_sharing_flag"], bd["credential_sharing_details"],
-                 bd["burnout_stress_score"], bd["burnout_details"],
-                 bd["shadow_it_flag"], bd["shadow_it_details"],
-                 bd["ai_risk_flag"], bd["ai_risk_details"],
-                 bd["unusual_collaboration_flag"], bd["unusual_collaboration_details"],
-                 bd["privilege_escalation_flag"], bd["privilege_escalation_details"],
-                 bd["forecast_today"], bd["forecast_next_week"], bd["forecast_next_month"],
-                 bd["baseline_login_time"], bd["baseline_device"], bd["baseline_location"],
-                 bd["baseline_file_access"], bd["accessed_folders"], bd["expected_folders"],
-                 bd["business_impact_rupees"], bd["mitre_techniques"], bd["mitre_confidence"]))
-
-        # Seed initial events
-        if u["role"] == "employee" and u["username"] in BEHAVIOR_SEED:
-            bd = BEHAVIOR_SEED[u["username"]]
-            base_dt = datetime.now() - timedelta(hours=3)
-            _log_event(conn, uid, u["username"], u["name"], u["dept"],
-                       "Login", f"Baseline login from {bd['baseline_location']} on {bd['baseline_device']}",
-                       "192.168.1."+str(hash(u["username"])%250+1), bd["baseline_device"], 0, 0, ts_str=base_dt.isoformat())
-            if bd["unusual_collaboration_flag"]:
-                _log_event(conn, uid, u["username"], u["name"], u["dept"],
-                           "Sensitive Page Access", f"Unauthorized folder access: {bd['unusual_collaboration_details']}",
-                           "192.168.1."+str(hash(u["username"])%250+1), bd["baseline_device"], 20, 1,
-                           ts_str=(base_dt+timedelta(minutes=15)).isoformat())
-            if bd["ai_risk_flag"]:
-                _log_event(conn, uid, u["username"], u["name"], u["dept"],
-                           "GenAI Upload", f"{bd['ai_risk_details']} — {bd['genai_upload_mb']} MB",
-                           "192.168.1."+str(hash(u["username"])%250+1), bd["baseline_device"], 30, 1,
-                           ts_str=(base_dt+timedelta(minutes=30)).isoformat())
-            if bd["downloads"] > 50:
-                _log_event(conn, uid, u["username"], u["name"], u["dept"],
-                           "File Download", f"Mass download: {bd['downloads']} files",
-                           "192.168.1."+str(hash(u["username"])%250+1), bd["baseline_device"], 25, 1,
-                           ts_str=(base_dt+timedelta(minutes=20)).isoformat())
-            if bd["usb_usage"]:
-                _log_event(conn, uid, u["username"], u["name"], u["dept"],
-                           "USB Event", "Unregistered USB device connected and used",
-                           "192.168.1."+str(hash(u["username"])%250+1), bd["baseline_device"], 20, 1,
-                           ts_str=(base_dt+timedelta(minutes=25)).isoformat())
-            if bd["privilege_escalation_flag"]:
-                _log_event(conn, uid, u["username"], u["name"], u["dept"],
-                           "Privilege Change", bd["privilege_escalation_details"],
-                           "192.168.1."+str(hash(u["username"])%250+1), bd["baseline_device"], 40, 1,
-                           ts_str=(base_dt+timedelta(minutes=10)).isoformat())
 
     for p in DEFAULT_POLICIES:
         pid = str(uuid.uuid4())
@@ -560,7 +493,7 @@ def ensure_trusted_devices_seeded():
     c.execute("SELECT id, username, role FROM users")
     users = c.fetchall()
     for uid, uname, urole in users:
-        dev_id = "DEV-CORP-ADMIN-01" if urole == "admin" else ("DEV-55357-WIN" if uname == "ravi" else f"DEV-{abs(hash(uname))%90000+10000}-CORP")
+        dev_id = "DEV-CORP-ADMIN-01" if urole == "admin" else f"DEV-{abs(hash(uname))%90000+10000}-CORP"
         dev_name = "Admin SOC Secured Workstation" if urole == "admin" else "Corporate Laptop"
         register_or_update_device(conn, uid, dev_id, dev_name, "Google Chrome 127", "Windows 11 Enterprise", "192.168.1.10", is_trusted=True)
     conn.close()
@@ -669,76 +602,13 @@ def load_all_evaluated():
             t_m15 = (now_dt - timedelta(minutes=15)).strftime("%H:%M")
             t_m20 = (now_dt - timedelta(minutes=20)).strftime("%H:%M")
 
-            if uname == 'ravi':
-                events = [
-                    {"time": bl_t, "desc": "Baseline login expected (Office Laptop, Bengaluru)", "flagged": False},
-                    {"time": t_m20, "desc": f"ACTUAL LOGIN — {t_m20} from unregistered device", "flagged": True},
-                    {"time": t_m15, "desc": "Accessed Finance folder files (Privilege Misuse)", "flagged": True},
-                    {"time": t_m10, "desc": f"Mass download: {bd.get('downloads',0)} files", "flagged": True},
-                    {"time": t_m5,  "desc": f"Uploaded {bd.get('genai_upload_mb',0)} MB to ChatGPT (IP Exfiltration)", "flagged": True}
-                ]
-            elif uname == 'rahul':
-                events = [
-                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                    {"time": t_m20, "desc": "Login (Office Desktop, Bengaluru)", "flagged": False},
-                    {"time": t_m10, "desc": "Accessed Payroll Database — not in HR role scope", "flagged": True},
-                    {"time": t_m5,  "desc": "Accessed Finance Folder — privilege misuse", "flagged": True}
-                ]
-            elif uname == 'dormant_alice':
-                events = [
-                    {"time": t_m15, "desc": f"Dormant account login attempt ({bd.get('last_login_days_ago',0)} days inactive)", "flagged": True},
-                    {"time": t_m10, "desc": f"Failed logins: {bd.get('failed_logins',0)} attempts", "flagged": True},
-                    {"time": t_m5,  "desc": "Accessed Sales Folder (Dormant Account Misuse)", "flagged": True}
-                ]
-            elif uname == 'traveler_dan':
-                events = [
-                    {"time": t_m20, "desc": "Login from Bengaluru (Office Laptop)", "flagged": False},
-                    {"time": (now_dt - timedelta(minutes=8)).strftime("%H:%M"), "desc": "Login detected from London — new device, IP 85.90.12.3", "flagged": True},
-                    {"time": (now_dt - timedelta(minutes=8)).strftime("%H:%M"), "desc": "⚠ IMPOSSIBLE TRAVEL: 10h journey in 12 minutes", "flagged": True}
-                ]
-            elif uname == 'shared_sam':
-                events = [
-                    {"time": t_m15, "desc": "Login from Chrome/Windows — Mumbai IP 103.45.12.1", "flagged": False},
-                    {"time": t_m10, "desc": "Concurrent login from Safari/macOS — Delhi IP 122.160.8.4", "flagged": True},
-                    {"time": t_m10, "desc": "⚠ CREDENTIAL SHARING: simultaneous sessions from two locations", "flagged": True}
-                ]
-            elif uname == 'burnout_eve':
-                events = [
-                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                    {"time": t_m20, "desc": f"Off-hours login detected: {t_m20} (burnout risk pattern)", "flagged": True},
-                    {"time": t_m10, "desc": f"Failed logins: {bd.get('failed_logins',0)} attempts", "flagged": True},
-                    {"time": t_m5,  "desc": "Weekend data access pattern verified", "flagged": True}
-                ]
-            elif uname == 'shadow_it_ted':
-                events = [
-                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                    {"time": t_m20, "desc": "Login (Linux Workstation, Hyderabad)", "flagged": False},
-                    {"time": t_m15, "desc": "Unauthorized software: AnyDesk — BLOCKED", "flagged": True},
-                    {"time": t_m10, "desc": "Unauthorized software: TeamViewer — BLOCKED", "flagged": True},
-                    {"time": t_m5,  "desc": "Unknown VPN connection attempt — BLOCKED", "flagged": True}
-                ]
-            elif uname == 'ai_paste_pat':
-                events = [
-                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                    {"time": t_m20, "desc": "Login (Developer MacBook, Bengaluru)", "flagged": False},
-                    {"time": t_m10, "desc": f"Pasted source code to ChatGPT ({bd.get('genai_upload_mb',0)} MB)", "flagged": True},
-                    {"time": t_m5,  "desc": "Sensitive IP exfiltrated via public AI tool", "flagged": True}
-                ]
-            elif uname == 'escalated_eric':
-                events = [
-                    {"time": bl_t, "desc": "Baseline login expected", "flagged": False},
-                    {"time": t_m20, "desc": "Login (Helpdesk Terminal, Bengaluru)", "flagged": False},
-                    {"time": t_m10, "desc": "⚠ PRIVILEGE ESCALATION: Employee → Admin role detected", "flagged": True},
-                    {"time": t_m5,  "desc": "Accessed Active Directory & Domain Controller Logs", "flagged": True}
-                ]
-            else:
-                events = [{"time": t_m20, "desc": f"Login from {bd.get('current_login_location','Office')}", "flagged": False}]
-                if bd.get('failed_logins', 0):
-                    events.append({"time": t_m15, "desc": f"Failed logins: {bd.get('failed_logins',0)}", "flagged": bd.get('failed_logins',0)>2})
-                if bd.get('file_access_count', 0) > 20:
-                    events.append({"time": t_m10, "desc": f"Accessed {bd.get('file_access_count',0)} files", "flagged": bd.get('file_access_count',0)>50})
-                if bd.get('downloads', 0) > 5:
-                    events.append({"time": t_m5, "desc": f"Downloaded {bd.get('downloads',0)} files", "flagged": bd.get('downloads',0)>20})
+            events = [{"time": t_m20, "desc": f"Active Session: {bd.get('current_login_location','Office')}", "flagged": False}]
+            if bd.get('failed_logins', 0):
+                events.append({"time": t_m15, "desc": f"Failed logins: {bd.get('failed_logins',0)}", "flagged": bd.get('failed_logins',0)>2})
+            if bd.get('file_access_count', 0) > 20:
+                events.append({"time": t_m10, "desc": f"Accessed {bd.get('file_access_count',0)} files", "flagged": bd.get('file_access_count',0)>50})
+            if bd.get('downloads', 0) > 5:
+                events.append({"time": t_m5, "desc": f"Downloaded {bd.get('downloads',0)} files", "flagged": bd.get('downloads',0)>20})
 
         exfil = min(99, max(5,
             (35 if row.get('usb_usage',0) else 0) +
@@ -3102,26 +2972,6 @@ def admin_live_activity():
             "risk_contrib": rc
         })
 
-    # Default fallback simulated SIEM stream if database events are minimal
-    if len(siem_stream) < 6:
-        now_dt = datetime.now()
-        fallback_templates = [
-            (9, "Ravi", "Login", "Successful SSO Authentication", False, 0),
-            (7, "Ravi", "Payroll Access", "Accessed Payroll System", True, 20),
-            (5, "Ravi", "Download Report", "Downloaded Q2_Performance_Report.pdf", False, 0),
-            (3, "Ravi", "New Device", "Access attempt from unregistered hardware fingerprint", True, 15),
-            (2, "System", "Risk Increased", "Unified UEBA Risk Score updated to 65/100", True, 25),
-            (1, "SOC Engine", "Alert Generated", "P1 Critical Alert — Automated Lockout Challenge Issued", True, 35)
-        ]
-        siem_stream = [
-            {
-                "time": (now_dt - timedelta(minutes=m)).strftime("%H:%M"),
-                "timestamp": (now_dt - timedelta(minutes=m)).astimezone().isoformat(),
-                "user": u, "event_type": et, "details": det, "is_suspicious": susp, "risk_contrib": rc
-            }
-            for m, u, et, det, susp, rc in fallback_templates
-        ]
-
     return jsonify(siem_stream)
 
 @app.route('/api/admin/reports/download', methods=['GET'])
@@ -4597,10 +4447,12 @@ try:
     ensure_incidents(df_init)
     ensure_trusted_devices_seeded()
 
-    # Launch hardware USB monitoring daemon thread (Windows local workstation endpoints only)
-    if sys.platform == 'win32' and winreg:
-        usb_thread = threading.Thread(target=usb_hardware_daemon, daemon=True)
-        usb_thread.start()
+    # Hardware USB background daemon is disabled on startup to prevent spontaneous notifications
+    # when USB devices / ADB interfaces are present on the host PC. 
+    # USB alerts can be explicitly tested on demand via /api/admin/usb/test-trigger
+    # if sys.platform == 'win32' and winreg:
+    #     usb_thread = threading.Thread(target=usb_hardware_daemon, daemon=True)
+    #     usb_thread.start()
 except Exception as e:
     print(f"Startup initialization notice: {e}")
 

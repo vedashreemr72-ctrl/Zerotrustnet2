@@ -128,44 +128,25 @@ export default function NotificationCenter({ token, theme: propTheme }) {
       const data = await res.json();
       if (!Array.isArray(data)) return;
 
-      // Detect newly arrived notifications
+      // Detect newly arrived notifications during active session (only for genuine Critical alerts)
       if (initialLoadDoneRef.current) {
-        const fresh = data.filter(n => !knownIdsRef.current.has(n.id));
+        const fresh = data.filter(n => !knownIdsRef.current.has(n.id) && n.severity === 'Critical');
         if (fresh.length > 0) {
-          // Play sound on newest event
-          playCyberChime(fresh[0].severity);
+          // Play sound on genuine critical threat event
+          playCyberChime('Critical');
 
-          // Add toast for up to 3 most recent new events
-          const newToasts = fresh.slice(0, 3).map(n => ({
+          // Add toast for the critical event
+          const newToasts = fresh.slice(0, 2).map(n => ({
             id: n.id,
-            subject: n.subject || 'Security Event Detected',
-            message: n.message,
-            severity: n.severity || 'High',
-            username: n.username,
-            sent_at: n.sent_at,
-            timestamp: Date.now()
-          }));
-
-          setToasts(prev => [...newToasts, ...prev].slice(0, 5));
-        }
-      } else {
-        // On initial page load: if there is an unread Critical USB alert, pop up toast immediately
-        const recentUsb = data.filter(n => 
-          !n.is_read && 
-          n.severity === 'Critical' && 
-          ((n.subject && n.subject.toUpperCase().includes('USB')) || (n.message && n.message.toUpperCase().includes('USB')))
-        );
-        if (recentUsb.length > 0) {
-          const initToasts = recentUsb.slice(0, 1).map(n => ({
-            id: n.id,
-            subject: n.subject,
+            subject: n.subject || 'Critical Security Alert',
             message: n.message,
             severity: 'Critical',
             username: n.username,
             sent_at: n.sent_at,
             timestamp: Date.now()
           }));
-          setToasts(initToasts);
+
+          setToasts(prev => [...newToasts, ...prev].slice(0, 3));
         }
       }
 

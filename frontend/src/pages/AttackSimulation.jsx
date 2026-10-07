@@ -155,7 +155,7 @@ export default function AttackSimulation({ token }) {
     if (stepIdx !== null) setCurrentStepIndex(stepIdx);
 
     try {
-      const currentEmp = employees[selectedIdx] || { name: 'Ravi Sharma' };
+      const currentEmp = employees[selectedIdx] || employees[0] || { name: 'Employee' };
       const response = await fetch('/api/admin/sim', {
         method: 'POST',
         headers: {
@@ -201,7 +201,7 @@ export default function AttackSimulation({ token }) {
     stopAutoTour();
 
     try {
-      const currentEmp = employees[selectedIdx] || { name: 'Ravi Sharma' };
+      const currentEmp = employees[selectedIdx] || employees[0] || { name: 'Employee' };
       const response = await fetch('/api/admin/sim/reset', {
         method: 'POST',
         headers: {
@@ -260,8 +260,8 @@ export default function AttackSimulation({ token }) {
   if (loading) return <div style={{ padding: '2rem' }}>Loading target vectors...</div>;
   if (error) return <div style={{ padding: '2rem', color: '#ef4444' }}>Error: {error}</div>;
 
-  const currentEmp = employees[selectedIdx] || {
-    name: 'Ravi Sharma',
+  const currentEmp = employees[selectedIdx] || employees[0] || {
+    name: 'Employee',
     department: 'Engineering',
     risk_score: activeVectorData ? activeVectorData.newRiskScore : 12,
     severity: activeVectorData ? activeVectorData.newSeverity : '🟢 Low',
