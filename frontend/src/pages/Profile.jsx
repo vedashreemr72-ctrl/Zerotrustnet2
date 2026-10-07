@@ -5,11 +5,13 @@ import {
   Download, ArrowLeft, Eye, EyeOff, Check, X, FileText, SmartphoneCharging
 } from 'lucide-react';
 import { formatLocalDateTime, formatLocalTime } from '../utils/timeFormat';
+import SecurityTelemetry from '../components/SecurityTelemetry';
 
 export default function Profile({ token, user, onBack }) {
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeProfileTab, setActiveProfileTab] = useState('telemetry'); // 'telemetry' or 'identity'
   
   // Modals state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -177,7 +179,60 @@ export default function Profile({ token, user, onBack }) {
         </div>
       </div>
 
-      {/* 👤 HERO IDENTITY BANNER CARD */}
+      {/* 🧭 Profile Navigation Tabs: Identity Profile vs Security & Zero Trust Telemetry */}
+      <div style={{
+        display: 'flex',
+        gap: '0.65rem',
+        marginBottom: '1.35rem',
+        borderBottom: '1px solid rgba(0, 245, 255, 0.15)',
+        paddingBottom: '0.85rem',
+        flexWrap: 'wrap',
+        alignItems: 'center'
+      }}>
+        <button
+          className={`zt-btn ${activeProfileTab === 'identity' ? '' : 'zt-btn-sec'}`}
+          style={{
+            padding: '0.55rem 1.25rem',
+            fontSize: '0.88rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: activeProfileTab === 'identity' ? 'linear-gradient(135deg, rgba(0, 245, 255, 0.25), rgba(0, 128, 255, 0.3))' : 'rgba(15, 23, 42, 0.6)',
+            borderColor: activeProfileTab === 'identity' ? '#00f5ff' : 'rgba(255, 255, 255, 0.1)',
+            color: activeProfileTab === 'identity' ? '#00f5ff' : '#94a3b8',
+            boxShadow: activeProfileTab === 'identity' ? '0 0 15px rgba(0, 245, 255, 0.25)' : 'none'
+          }}
+          onClick={() => setActiveProfileTab('identity')}
+        >
+          <User size={16} /> 👤 Identity Profile & Credentials
+        </button>
+
+        <button
+          className={`zt-btn ${activeProfileTab === 'telemetry' ? '' : 'zt-btn-sec'}`}
+          style={{
+            padding: '0.55rem 1.25rem',
+            fontSize: '0.88rem',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: activeProfileTab === 'telemetry' ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(126, 34, 206, 0.3))' : 'rgba(15, 23, 42, 0.6)',
+            borderColor: activeProfileTab === 'telemetry' ? '#c084fc' : 'rgba(255, 255, 255, 0.1)',
+            color: activeProfileTab === 'telemetry' ? '#c084fc' : '#94a3b8',
+            boxShadow: activeProfileTab === 'telemetry' ? '0 0 15px rgba(168, 85, 247, 0.25)' : 'none'
+          }}
+          onClick={() => setActiveProfileTab('telemetry')}
+        >
+          <Shield size={16} /> 🛡️ Security & Zero Trust Telemetry
+        </button>
+      </div>
+
+      {activeProfileTab === 'telemetry' ? (
+        <SecurityTelemetry token={token} user={u} initialData={profileData} />
+      ) : (
+        <>
+          {/* 👤 HERO IDENTITY BANNER CARD */}
       <div className="zt-card" style={{
         background: 'linear-gradient(135deg, rgba(13, 27, 62, 0.95), rgba(3, 9, 30, 0.98))',
         border: '1.5px solid rgba(0, 245, 255, 0.28)',
@@ -517,6 +572,8 @@ export default function Profile({ token, user, onBack }) {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* 🔐 PASSWORD UPDATE MODAL */}
       {showPasswordModal && (

@@ -14,6 +14,7 @@ import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import NotificationCenter from './components/NotificationCenter';
 import GlobalHeader from './components/GlobalHeader';
+import SecurityTelemetry from './components/SecurityTelemetry';
 import { formatLocalDateTime } from './utils/timeFormat';
 
 import { 
@@ -313,104 +314,8 @@ export default function App() {
 
         case 'emp_security':
           return (
-            <div>
-              <div className="zt-title">My Security Standing</div>
-              <div className="zt-subtitle">Continuous Risk Profile · Dynamic Policies · Standards Check</div>
-
-              <div className="grid-2col">
-                <div>
-                  <div className="zt-section-title">
-                    <ShieldCheck size={18} /> Real-Time Policy Parameters
-                  </div>
-                  <div className="zt-card">
-                    {empData && empData.baseline ? (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                          <tr style={{ borderBottom: '1px solid rgba(0, 245, 255, 0.08)' }}>
-                            <th style={{ textAlign: 'left', padding: '6px 0', color: '#4a6275' }}>Operational Metric</th>
-                            <th style={{ textAlign: 'center', padding: '6px 0', color: '#4a6275' }}>Baseline Standard</th>
-                            <th style={{ textAlign: 'center', padding: '6px 0', color: '#00f5ff' }}>Current Value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr style={{ borderBottom: '1px solid rgba(0, 245, 255, 0.04)' }}>
-                            <td style={{ padding: '8px 0', color: '#8aafc8' }}>Daily Login window</td>
-                            <td style={{ textAlign: 'center', color: '#4a6275' }}>{empData.baseline.login_time}</td>
-                            <td style={{ textAlign: 'center', color: (empData.baseline.actual_login_hour < 7 || empData.baseline.actual_login_hour > 20) ? '#ef4444' : '#22c55e', fontWeight: 'bold' }}>
-                              {empData.baseline.actual_login_hour.toString().padStart(2, '0')}:00
-                            </td>
-                          </tr>
-                          <tr style={{ borderBottom: '1px solid rgba(0, 245, 255, 0.04)' }}>
-                            <td style={{ padding: '8px 0', color: '#8aafc8' }}>Device registration</td>
-                            <td style={{ textAlign: 'center', color: '#4a6275' }}>{empData.baseline.device}</td>
-                            <td style={{ textAlign: 'center', color: empData.baseline.actual_device.includes('Unknown') ? '#ef4444' : '#22c55e', fontWeight: 'bold' }}>
-                              {empData.baseline.actual_device}
-                            </td>
-                          </tr>
-                          <tr style={{ borderBottom: '1px solid rgba(0, 245, 255, 0.04)' }}>
-                            <td style={{ padding: '8px 0', color: '#8aafc8' }}>Work location</td>
-                            <td style={{ textAlign: 'center', color: '#4a6275' }}>{empData.baseline.location}</td>
-                            <td style={{ 
-                              textAlign: 'center', 
-                              color: (empData.baseline.actual_location && empData.baseline.location && 
-                                !empData.baseline.actual_location.toLowerCase().includes(empData.baseline.location.toLowerCase()) && 
-                                !empData.baseline.location.toLowerCase().includes(empData.baseline.actual_location.toLowerCase())) 
-                                ? '#ef4444' : '#22c55e', 
-                              fontWeight: 'bold' 
-                            }}>
-                              {empData.baseline.actual_location}
-                            </td>
-                          </tr>
-                          <tr>
-                            <td style={{ padding: '8px 0', color: '#8aafc8' }}>File operations limits</td>
-                            <td style={{ textAlign: 'center', color: '#4a6275' }}>{empData.baseline.file_access}/day</td>
-                            <td style={{ textAlign: 'center', color: empData.baseline.actual_file_access > empData.baseline.file_access * 2.5 ? '#ef4444' : '#22c55e', fontWeight: 'bold' }}>
-                              {empData.baseline.actual_file_access}/day
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p style={{ color: '#4a6275', fontSize: '0.82rem' }}>Baseline parameters loading...</p>
-                    )}
-                  </div>
-
-                  <div className="zt-section-title" style={{ marginTop: '1rem' }}>
-                    <ShieldCheck size={18} /> Security Guardrails
-                  </div>
-                  <div className="zt-card" style={{ fontSize: '0.82rem', lineHeight: '1.8' }}>
-                    <div style={{ color: '#00f5ff', fontWeight: 'bold', marginBottom: '4px' }}>Policies Checked:</div>
-                    1. Unknown Device + Sensitive access outside business hours triggers MFA step-up.<br />
-                    2. Downloads exceeding 100 files suspends accounts temporarily.<br />
-                    3. Simultaneous logins from distinct locations lock sessions immediately.<br />
-                    4. Pasting sensitive source code and data to public AI tools is blocked.
-                  </div>
-                </div>
-
-                <div>
-                  <div className="zt-section-title">
-                    <ShieldCheck size={18} /> My Recommendations
-                  </div>
-                  <div className="zt-card">
-                    {empData && empData.recommendations && empData.recommendations.length > 0 && empData.recommendations[0] !== 'No active recommendations — continue baseline monitoring' ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ color: '#f97316', fontWeight: 'bold', fontSize: '0.88rem' }}>⚠ Active Recommendations Pending:</div>
-                        {empData.recommendations.map((rec, idx) => (
-                          <div key={idx} style={{ color: '#c8d6e8', fontSize: '0.82rem' }}>
-                            ▸ {rec}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '1rem' }}>
-                        <div style={{ fontSize: '2rem', marginBottom: '6px' }}>✓</div>
-                        <div style={{ color: '#22c55e', fontWeight: 'bold' }}>Account in Good Standing</div>
-                        <p style={{ fontSize: '0.78rem', color: '#4a6275', marginTop: '4px' }}>All actions align with organizational standards.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+            <div style={{ maxWidth: '1280px', margin: '0 auto', paddingBottom: '3rem' }}>
+              <SecurityTelemetry token={token} user={user} initialData={empData} />
             </div>
           );
 
