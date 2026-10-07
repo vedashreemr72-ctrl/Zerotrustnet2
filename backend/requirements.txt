@@ -7,7 +7,6 @@ numpy
 reportlab
 gunicorn
 python-dotenv
-twilio
+pyotp
+qrcode
 supabase
-
-

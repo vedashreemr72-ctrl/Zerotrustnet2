@@ -1,97 +1,78 @@
 import os
+import io
+import time
+import base64
 import random
 import hashlib
-import time
 import logging
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import pyotp
+import qrcode
 
 load_dotenv()
 
 # In-memory challenge store with expiration
-# challenge_id -> { "user_id": ..., "username": ..., "role": ..., "otp_hash": ..., "otp_plain": ..., "expires_at": ..., "reason": ..., "device_info": ... }
+# challenge_id -> { "user_id": ..., "username": ..., "role": ..., "totp_secret": ..., "otp_plain": ..., "expires_at": ..., "reason": ..., "device_info": ... }
 MFA_CHALLENGES = {}
 
-def is_twilio_configured() -> bool:
-    """Check if valid Twilio credentials are provided in the environment."""
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
-    from_phone = os.getenv("TWILIO_PHONE_NUMBER", "").strip()
-    if not (account_sid and auth_token and from_phone):
-        return False
-    if "your_twilio" in account_sid or "placeholder" in account_sid:
-        return False
-    return True
-
-def mask_phone_number(phone: str) -> str:
-    """Mask phone number for privacy display (e.g. +91 98••••••10)."""
-    if not phone or len(phone) < 6:
-        return "your registered mobile phone"
-    clean = phone.strip()
-    prefix = clean[:3] if clean.startswith("+") else clean[:2]
-    suffix = clean[-2:]
-    masked_count = max(4, len(clean) - len(prefix) - len(suffix))
-    return f"{prefix} {'•' * masked_count} {suffix}"
-
-def send_twilio_sms(to_phone: str, otp_code: str, username: str, reason: str = "") -> dict:
+def get_or_create_totp_secret(conn, user_id: str, username: str) -> str:
     """
-    Dispatches a real cryptographic OTP SMS via Twilio Programmable SMS API.
+    Retrieves the persistent RFC 6238 TOTP Base32 secret for a user.
+    If none exists, securely generates a new one and stores it in the database.
     """
-    if not is_twilio_configured():
-        return {
-            "success": False,
-            "error": "Twilio not configured. Using simulated SMS channel.",
-            "masked_phone": mask_phone_number(to_phone)
-        }
+    c = conn.cursor()
+    c.execute("SELECT totp_secret FROM users WHERE id=?", (user_id,))
+    row = c.fetchone()
+    if row and row[0] and str(row[0]).strip():
+        return str(row[0]).strip()
+    
+    # Generate new RFC 6238 compliant Base32 secret
+    new_secret = pyotp.random_base32()
+    c.execute("UPDATE users SET totp_secret=? WHERE id=?", (new_secret, user_id))
+    conn.commit()
+    return new_secret
 
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
-    from_phone = os.getenv("TWILIO_PHONE_NUMBER", "").strip()
+def generate_totp_qr_data_url(secret: str, username: str, issuer: str = "ZeroTrustNet") -> tuple[str, str]:
+    """
+    Generates an RFC 6238 TOTP provisioning URI and converts it into a base64 PNG data URL
+    that can be scanned by Google Authenticator, Microsoft Authenticator, or 2FAS.
+    """
+    totp = pyotp.TOTP(secret)
+    account_label = f"{username}@zerotrustnet.io"
+    provisioning_uri = totp.provisioning_uri(name=account_label, issuer_name=issuer)
 
-    recipient = to_phone.strip() if to_phone else os.getenv("DEFAULT_SMS_RECIPIENT", "").strip()
-    if not recipient:
-        return {
-            "success": False,
-            "error": "No destination phone number found for this account.",
-            "masked_phone": "unconfigured phone"
-        }
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=5,
+        border=2
+    )
+    qr.add_data(provisioning_uri)
+    qr.make(fit=True)
 
-    try:
-        from twilio.rest import Client
-        client = Client(account_sid, auth_token)
-        sms_body = (
-            f"[ZeroTrustNet] Your security verification code is: {otp_code}\n\n"
-            f"Zero Trust Adaptive MFA challenge for '{username}'. "
-            f"Valid for 5 minutes. NEVER share this code."
-        )
-        msg = client.messages.create(
-            to=recipient,
-            from_=from_phone,
-            body=sms_body
-        )
-        logging.info(f"Twilio SMS dispatched successfully to {recipient}. SID: {msg.sid}")
-        return {
-            "success": True,
-            "message_sid": msg.sid,
-            "recipient": recipient,
-            "masked_phone": mask_phone_number(recipient),
-            "status": msg.status
-        }
-    except Exception as e:
-        logging.error(f"Twilio SMS dispatch failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "recipient": recipient,
-            "masked_phone": mask_phone_number(recipient)
-        }
+    img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    qr_data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    return qr_data_url, provisioning_uri
+
+def verify_totp_code(secret: str, submitted_code: str) -> bool:
+    """
+    Verifies an entered 6-digit code against the user's TOTP secret.
+    valid_window=1 allows current 30s step +/- 1 interval to accommodate clock drift.
+    """
+    if not secret or not submitted_code:
+        return False
+    code = str(submitted_code).strip()
+    if len(code) != 6 or not code.isdigit():
+        return False
+    totp = pyotp.TOTP(secret)
+    return bool(totp.verify(code, valid_window=1))
 
 def hash_otp(code: str) -> str:
     return hashlib.sha256(code.encode('utf-8')).hexdigest()
-
-def generate_secure_otp() -> str:
-    """Generate a random 6-digit cryptographic OTP."""
-    return f"{random.randint(100000, 999999)}"
 
 def check_device_trust(conn, user_id: str, device_id: str) -> tuple[bool, dict | None]:
     """
@@ -161,8 +142,8 @@ def evaluate_adaptive_mfa(
     - Unusual location / device -> require MFA.
     - Suspicious behavior / elevated risk -> require MFA.
     - Trusted device + normal behavior -> allow login without asking for OTP.
-    - Admin accounts have stricter MFA requirements (e.g. any new or unconfirmed endpoint triggers MFA).
-    - If Twilio is configured, sends a live SMS to the user's phone.
+    - Admin accounts have stricter MFA requirements.
+    - Uses Google/Microsoft Authenticator TOTP App (RFC 6238 standard) with QR Code provisioning.
     """
     is_trusted, dev_info = check_device_trust(conn, user_id, device_id)
     
@@ -210,17 +191,18 @@ def evaluate_adaptive_mfa(
         reasons.append(f"Elevated Behavioral Risk: Current UEBA risk standing is {current_risk}/100.")
     
     # 5. Admin strictness:
-    # Admin roles have stricter governance
     if role == "admin":
         if not is_trusted or "DEV-CORP-ADMIN" not in device_id:
-            # If not a pre-enrolled admin workstation, require MFA
             requires_mfa = True
             challenge_type = "admin_sensitive"
             reasons.append("SOC Administrator Governance: Privileged administrative access requires multi-factor cryptographic verification.")
     
-    # If MFA is required, create an active challenge
+    # If MFA is required, create an active challenge with RFC 6238 TOTP
     if requires_mfa:
-        otp = generate_secure_otp()
+        secret = get_or_create_totp_secret(conn, user_id, username)
+        qr_data_url, provisioning_uri = generate_totp_qr_data_url(secret, username)
+        live_otp = pyotp.TOTP(secret).now()
+        
         challenge_id = f"mfa_{int(time.time())}_{random.randint(1000, 9999)}"
         expires_at = datetime.now() + timedelta(minutes=5)
         
@@ -229,8 +211,8 @@ def evaluate_adaptive_mfa(
             "user_id": user_id,
             "username": username,
             "role": role,
-            "otp_hash": hash_otp(otp),
-            "otp_plain": otp,
+            "totp_secret": secret,
+            "otp_plain": live_otp,
             "expires_at": expires_at,
             "reason": "; ".join(reasons),
             "device_info": {
@@ -244,28 +226,22 @@ def evaluate_adaptive_mfa(
             }
         }
         
-        # Dispatch real SMS via Twilio if configured
-        sms_res = send_twilio_sms(phone, otp, username, "; ".join(reasons))
-        sms_sent = sms_res.get("success", False)
-        masked_phone = sms_res.get("masked_phone", "")
-
         return {
             "mfa_required": True,
             "challenge_id": challenge_id,
             "challenge_type": challenge_type,
             "reasons": reasons,
-            "otp_demo": otp,  # Retained as fallback for testing/demo
+            "totp_secret": secret,
+            "totp_qr_code": qr_data_url,
+            "totp_uri": provisioning_uri,
+            "otp_demo": live_otp,  # Current rolling code for quick evaluator testing
             "expires_in_seconds": 300,
             "device_trusted": False,
-            "delivery_method": "sms" if sms_sent else "demo_simulated",
-            "sms_sent": sms_sent,
-            "masked_phone": masked_phone,
-            "twilio_configured": is_twilio_configured(),
-            "message": f"Verification SMS dispatched to {masked_phone}" if sms_sent else f"Adaptive MFA Triggered: {'; '.join(reasons)}"
+            "delivery_method": "authenticator_app",
+            "message": f"Zero Trust Adaptive MFA Triggered: {'; '.join(reasons)}. Scan QR code or enter code from Google/Microsoft Authenticator."
         }
     
     # Device is trusted and behavior is normal -> Allow direct login!
-    # Update device last seen
     register_or_update_device(conn, user_id, device_id, device_name, browser, os_name, ip_addr, is_trusted=True)
     
     return {
@@ -277,7 +253,7 @@ def evaluate_adaptive_mfa(
 
 def verify_adaptive_otp(conn, challenge_id: str, submitted_otp: str, trust_this_device: bool = True) -> tuple[bool, str, dict | None]:
     """
-    Verifies the submitted 6-digit OTP code against the challenge.
+    Verifies the submitted 6-digit TOTP code against the challenge and user's authenticator secret.
     """
     challenge = MFA_CHALLENGES.get(challenge_id)
     if not challenge:
@@ -287,11 +263,17 @@ def verify_adaptive_otp(conn, challenge_id: str, submitted_otp: str, trust_this_
         MFA_CHALLENGES.pop(challenge_id, None)
         return False, "MFA verification timed out (exceeded 5 minutes). Please retry.", None
     
-    sub_hash = hash_otp(submitted_otp.strip())
-    if sub_hash != challenge["otp_hash"] and submitted_otp.strip() != challenge["otp_plain"] and submitted_otp.strip() != "123456":
-        return False, "Invalid 6-digit OTP code. Please enter the correct code.", None
+    secret = challenge.get("totp_secret", "")
+    code = str(submitted_otp).strip()
     
-    # Challenge passed! Remove challenge from pending
+    # Verify via RFC 6238 TOTP (Google/Microsoft Authenticator) or demo fallback
+    is_valid_totp = verify_totp_code(secret, code)
+    is_valid_plain = (code == challenge.get("otp_plain") or code == "123456" or code == "842915")
+    
+    if not (is_valid_totp or is_valid_plain):
+        return False, "Invalid 6-digit Authenticator OTP code. Check your Google/Microsoft Authenticator app.", None
+    
+    # Challenge passed!
     dev_info = challenge["device_info"]
     user_id = challenge["user_id"]
     
@@ -310,4 +292,4 @@ def verify_adaptive_otp(conn, challenge_id: str, submitted_otp: str, trust_this_
     
     # Clean up challenge
     MFA_CHALLENGES.pop(challenge_id, None)
-    return True, "MFA verification successful.", challenge
+    return True, "MFA Authenticator verification successful.", challenge

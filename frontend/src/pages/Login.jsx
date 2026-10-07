@@ -468,11 +468,11 @@ export default function Login({
             </div>
 
             <div className="zt-input-group">
-              <label>Mobile Phone Number (For Real Twilio SMS OTP)</label>
+              <label>Contact Phone Number (Optional)</label>
               <input 
                 type="tel" 
                 className="zt-input" 
-                placeholder="e.g. +919876543210 (International E.164)" 
+                placeholder="e.g. +91 98765 43210" 
                 value={regPhone}
                 onChange={(e) => setRegPhone(e.target.value)}
               />

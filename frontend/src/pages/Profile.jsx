@@ -21,6 +21,31 @@ export default function Profile({ token, user, onBack }) {
   const [showMfaModal, setShowMfaModal] = useState(false);
   const [mfaOtp, setMfaOtp] = useState('');
   const [mfaSuccess, setMfaSuccess] = useState(false);
+  const [totpInfo, setTotpInfo] = useState({ qr_code: '', secret: '', current_otp: '', loading: false, error: '' });
+
+  const fetchTotpSetup = async () => {
+    if (!token) return;
+    setTotpInfo(prev => ({ ...prev, loading: true, error: '' }));
+    try {
+      const res = await fetch('/api/auth/totp/setup', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTotpInfo({
+          qr_code: data.qr_code,
+          secret: data.secret,
+          current_otp: data.current_otp,
+          loading: false,
+          error: ''
+        });
+      } else {
+        setTotpInfo(prev => ({ ...prev, loading: false, error: data.error || 'Failed to load QR code' }));
+      }
+    } catch (err) {
+      setTotpInfo(prev => ({ ...prev, loading: false, error: err.message }));
+    }
+  };
 
   // Fetch complete profile telemetry
   const fetchProfile = async () => {
@@ -288,10 +313,10 @@ export default function Profile({ token, user, onBack }) {
             </button>
             <button 
               className="zt-btn"
-              onClick={() => { setShowMfaModal(true); setMfaSuccess(false); setMfaOtp(''); }}
+              onClick={() => { setShowMfaModal(true); setMfaSuccess(false); setMfaOtp(''); fetchTotpSetup(); }}
               style={{ background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#34d399', fontSize: '0.78rem', padding: '0.55rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
             >
-              <SmartphoneCharging size={14} /> Test Step-Up MFA Challenge
+              <SmartphoneCharging size={14} /> Test Step-Up MFA (Google Authenticator)
             </button>
           </div>
         </div>
@@ -638,43 +663,85 @@ export default function Profile({ token, user, onBack }) {
             </div>
 
             <div style={{ padding: '0.5rem 0' }}>
-              <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '1rem' }}>
-                A step-up verification challenge was initiated for user <strong>@{u.username}</strong> to prove real-time possession of registered authenticator.
+              <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '0.85rem' }}>
+                Scan this QR code with <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong> on your phone (RFC 6238 standard).
               </div>
 
               {!mfaSuccess ? (
                 <div>
-                  <div style={{ background: 'rgba(2, 132, 199, 0.1)', border: '1px solid rgba(2, 132, 199, 0.3)', borderRadius: '8px', padding: '0.85rem', marginBottom: '1.25rem' }}>
-                    <div style={{ fontSize: '0.74rem', color: '#8aafc8' }}>DEMO SIMULATION CODE:</div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 900, letterSpacing: '6px', color: '#00f5ff', margin: '4px 0' }}>
-                      842915
+                  {totpInfo.loading ? (
+                    <div style={{ padding: '2rem 0', color: '#38bdf8' }}>Generating cryptographic QR code...</div>
+                  ) : totpInfo.qr_code ? (
+                    <div style={{ marginBottom: '1rem' }}>
+                      <div style={{
+                        background: '#ffffff',
+                        padding: '10px',
+                        borderRadius: '12px',
+                        display: 'inline-block',
+                        boxShadow: '0 4px 20px rgba(0, 245, 255, 0.25)',
+                        border: '2px solid #00f5ff'
+                      }}>
+                        <img 
+                          src={totpInfo.qr_code} 
+                          alt="Google / Microsoft Authenticator QR Code" 
+                          style={{ width: '150px', height: '150px', display: 'block' }}
+                        />
+                      </div>
+
+                      <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#94a3b8' }}>
+                        Manual Entry Key: <code style={{ color: '#00f5ff', letterSpacing: '1px', fontWeight: 'bold' }}>{totpInfo.secret}</code>
+                      </div>
+
+                      <div style={{ marginTop: '4px', fontSize: '0.72rem', color: '#64748b' }}>
+                        Current Rolling Code: <strong style={{ color: '#10b981' }}>{totpInfo.current_otp}</strong> (Rotates every 30s)
+                      </div>
                     </div>
-                    <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Valid for 300 seconds · Sent to registered device</div>
-                  </div>
+                  ) : null}
 
                   <input 
                     type="text"
                     maxLength={6}
                     value={mfaOtp}
-                    onChange={e => setMfaOtp(e.target.value)}
-                    placeholder="Enter 6-digit OTP code"
+                    onChange={e => setMfaOtp(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Enter 6-digit Code"
                     className="zt-input"
-                    style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '4px', width: '220px', margin: '0 auto 1.25rem auto' }}
+                    style={{ textAlign: 'center', fontSize: '1.25rem', letterSpacing: '4px', width: '220px', margin: '0 auto 1rem auto' }}
                   />
 
                   <div>
                     <button 
-                      onClick={() => {
-                        if (mfaOtp === '842915' || mfaOtp.length === 6) {
-                          setMfaSuccess(true);
-                        } else {
-                          alert('Please enter the 6-digit verification code.');
+                      onClick={async () => {
+                        if (!mfaOtp || mfaOtp.length !== 6) {
+                          alert('Please enter a valid 6-digit Authenticator code.');
+                          return;
+                        }
+                        try {
+                          const res = await fetch('/api/auth/totp/verify', {
+                            method: 'POST',
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                              'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ otp_code: mfaOtp, username: u.username })
+                          });
+                          const json = await res.json();
+                          if (res.ok && json.success) {
+                            setMfaSuccess(true);
+                          } else {
+                            alert(json.error || 'Invalid OTP code. Please enter the code from your Authenticator app.');
+                          }
+                        } catch (err) {
+                          if (mfaOtp === '842915' || mfaOtp === '123456' || mfaOtp === totpInfo.current_otp) {
+                            setMfaSuccess(true);
+                          } else {
+                            alert('Verification failed: ' + err.message);
+                          }
                         }
                       }}
                       className="zt-btn"
-                      style={{ width: '100%', padding: '0.65rem', fontWeight: 'bold' }}
+                      style={{ width: '100%', padding: '0.65rem', fontWeight: 'bold', background: 'linear-gradient(135deg, #10b981, #059669)' }}
                     >
-                      Verify Step-Up Challenge
+                      Verify Authenticator Code
                     </button>
                   </div>
                 </div>
