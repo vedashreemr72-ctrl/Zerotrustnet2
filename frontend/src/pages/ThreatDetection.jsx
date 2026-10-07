@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Shield, Cpu, RefreshCw, Layers } from 'lucide-react';
+import { formatShortTime } from '../utils/timeFormat';
 
 export default function ThreatDetection({ token }) {
   const [employees, setEmployees] = useState([]);
@@ -43,38 +44,54 @@ export default function ThreatDetection({ token }) {
             <Users size={18} /> Monitored Employees
           </div>
           <div className="zt-card" style={{ padding: '0.8rem', maxHeight: '550px', overflowY: 'auto' }}>
-            {employees.map((emp, idx) => {
-              const active = idx === selectedIdx;
-              const threatClass = emp.threat_classification || 'Normal';
-              const sevColor = threatClass === 'Malicious' ? '#ef4444' : threatClass === 'Suspicious' ? '#f59e0b' : '#10b981';
+            {employees.length === 0 ? (
+              <div style={{ padding: '1.5rem', textAlign: 'center', color: '#4a6275', fontSize: '0.85rem' }}>
+                No active employee telemetry found in database.
+              </div>
+            ) : (
+              employees.map((emp, idx) => {
+                const active = idx === selectedIdx;
+                const threatClass = emp.threat_classification || 'Normal';
+                const sevColor = threatClass === 'Malicious' ? '#ef4444' : threatClass === 'Suspicious' ? '#f59e0b' : '#10b981';
 
-              return (
-                <button
-                  key={idx}
-                  className={`nav-item ${active ? 'active' : ''}`}
-                  onClick={() => setSelectedIdx(idx)}
-                  style={{
-                    marginBottom: '0.4rem',
-                    borderLeft: `4px solid ${sevColor}`,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.6rem 0.8rem',
-                    width: '100%'
-                  }}
-                >
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontWeight: '600', color: active ? '#00f5ff' : '#c8d6e8', fontSize: '0.85rem' }}>{emp.name}</div>
-                    <div style={{ fontSize: '0.72rem', color: '#4a6275' }}>{emp.department} • {threatClass}</div>
-                  </div>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold', fontFamily: 'monospace', color: sevColor }}>{emp.risk_score}</span>
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={idx}
+                    className={`nav-item ${active ? 'active' : ''}`}
+                    onClick={() => setSelectedIdx(idx)}
+                    style={{
+                      marginBottom: '0.4rem',
+                      borderLeft: `4px solid ${sevColor}`,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '0.6rem 0.8rem',
+                      width: '100%'
+                    }}
+                  >
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontWeight: '600', color: active ? '#00f5ff' : '#c8d6e8', fontSize: '0.85rem' }}>{emp.name}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#4a6275' }}>{emp.department} • {threatClass}</div>
+                    </div>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', fontFamily: 'monospace', color: sevColor }}>{emp.risk_score}</span>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
         {/* Right Column: Deep Drilldown */}
+        {!currentEmp && (
+          <div className="zt-card" style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+            <Shield size={36} style={{ margin: '0 auto 1rem', opacity: 0.5, color: '#00f5ff' }} />
+            <div style={{ fontSize: '1rem', color: '#c8d6e8', fontWeight: 'bold' }}>No Monitored Employee Selected</div>
+            <div style={{ fontSize: '0.85rem', color: '#4a6275', marginTop: '0.4rem' }}>
+              Select an employee from the left panel to inspect real-time behavioral deviation and ML anomaly telemetry.
+            </div>
+          </div>
+        )}
+
         {currentEmp && (
           <div>
             <div className="zt-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -266,7 +283,7 @@ export default function ThreatDetection({ token }) {
                             <span>{event.desc.toLowerCase().includes('login') ? '🔑' : event.desc.toLowerCase().includes('payroll') ? '💼' : event.desc.toLowerCase().includes('finance') ? '📁' : event.desc.toLowerCase().includes('download') ? '📄' : event.desc.toLowerCase().includes('usb') ? '🔌' : event.desc.toLowerCase().includes('logout') ? '🚪' : '⚡'}</span>
                             <span style={{ color: event.flagged ? '#f97316' : '#e2e8f0', fontWeight: event.flagged ? 'bold' : 'normal' }}>{event.desc}</span>
                           </div>
-                          <span style={{ fontFamily: 'monospace', color: '#00f5ff', fontSize: '0.72rem' }}>{event.time}</span>
+                          <span style={{ fontFamily: 'monospace', color: 'var(--accent-cyan)', fontSize: '0.78rem' }}>{formatShortTime(event.time)}</span>
                         </div>
                       </React.Fragment>
                     ))}

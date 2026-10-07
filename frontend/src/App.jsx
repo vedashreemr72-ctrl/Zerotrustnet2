@@ -15,12 +15,13 @@ import Profile from './pages/Profile';
 import NotificationCenter from './components/NotificationCenter';
 import GlobalHeader from './components/GlobalHeader';
 import SecurityTelemetry from './components/SecurityTelemetry';
-import { formatLocalDateTime } from './utils/timeFormat';
+import { formatLocalDateTime, formatShortTime } from './utils/timeFormat';
 
 import { 
   LayoutDashboard, Users, AlertTriangle, ShieldAlert, Cpu, Zap, 
   TrendingUp, FileText, HelpCircle, LogOut, Clock, ShieldCheck,
-  Sun, Moon, Monitor, Smartphone, Menu, X, User, Briefcase
+  Sun, Moon, Monitor, Smartphone, Menu, X, User, Briefcase,
+  ChevronLeft, ChevronRight, GripVertical, RotateCcw
 } from 'lucide-react';
 
 export default function App() {
@@ -52,6 +53,74 @@ export default function App() {
 
   // Mobile Drawer Navigation State
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Adjustable Sidebar State & Persistence
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('ztn_sidebar_width');
+    const parsed = parseInt(saved, 10);
+    return !isNaN(parsed) && parsed >= 190 && parsed <= 500 ? parsed : 295;
+  });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('ztn_sidebar_collapsed') === 'true';
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  const startResizing = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  const handleResetWidth = () => {
+    setSidebarWidth(295);
+    setIsSidebarCollapsed(false);
+    localStorage.setItem('ztn_sidebar_width', '295');
+    localStorage.setItem('ztn_sidebar_collapsed', 'false');
+  };
+
+  const handleToggleCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('ztn_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing) return;
+      const currentX = e.clientX;
+      if (currentX < 140) {
+        setIsSidebarCollapsed(true);
+        localStorage.setItem('ztn_sidebar_collapsed', 'true');
+      } else {
+        const clamped = Math.min(Math.max(currentX, 190), 500);
+        setSidebarWidth(clamped);
+        setIsSidebarCollapsed(false);
+        localStorage.setItem('ztn_sidebar_width', String(clamped));
+        localStorage.setItem('ztn_sidebar_collapsed', 'false');
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (isResizing) {
+        setIsResizing(false);
+      }
+    };
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      document.body.classList.add('resizing-sidebar');
+    } else {
+      document.body.classList.remove('resizing-sidebar');
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.classList.remove('resizing-sidebar');
+    };
+  }, [isResizing]);
 
   // Sync theme to document root
   useEffect(() => {
@@ -256,7 +325,7 @@ export default function App() {
                       <div className="tl-wrap">
                         {empData.timeline.map((event, idx) => (
                           <div key={idx} className={`tl-item ${event.flagged ? 'fl' : ''}`}>
-                            <div className="tl-t">{event.time}</div>
+                            <div className="tl-t">{formatShortTime(event.time)}</div>
                             <div className={`tl-d ${event.flagged ? 'fl-d' : ''}`}>{event.desc}</div>
                           </div>
                         ))}
@@ -326,7 +395,12 @@ export default function App() {
   };
 
   return (
-    <div className={`zt-container ${siteMode === 'mobile' ? 'site-mode-mobile' : 'site-mode-desktop'}`}>
+    <div 
+      className={`zt-container ${siteMode === 'mobile' ? 'site-mode-mobile' : 'site-mode-desktop'}`}
+      style={{
+        '--sidebar-width': isSidebarCollapsed ? '72px' : `${sidebarWidth}px`
+      }}
+    >
       {/* Mobile Drawer Backdrop */}
       {mobileNavOpen && (
         <div 
@@ -336,90 +410,196 @@ export default function App() {
       )}
 
       {/* Navigation Sidebar */}
-      <div className={`zt-sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
-        <div className="sb-logo">
-          <div className="brand">🛡️ ZeroTrustNet</div>
-          <div className="tagline" style={{ fontSize: '0.66rem', lineHeight: '1.25', color: '#38bdf8', marginTop: '3px' }}>
-            AI Zero Trust Access Verification & Insider Threat Platform
-          </div>
-          <div className="status" style={{ marginTop: '6px' }}>
-            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', boxShadow: '0 0 5px #22c55e' }}></span>
-            {user.role === 'admin' ? 'SOC Engine Active' : 'Session Verified'}
-          </div>
+      <div 
+        className={`zt-sidebar ${mobileNavOpen ? 'mobile-open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''} ${isResizing ? 'is-resizing' : ''}`}
+        style={{
+          width: isSidebarCollapsed ? '72px' : `${sidebarWidth}px`,
+          minWidth: isSidebarCollapsed ? '72px' : `${sidebarWidth}px`
+        }}
+      >
+        {/* Sidebar Header: Brand & Collapse Toggle */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: isSidebarCollapsed ? 'center' : 'space-between', 
+          marginBottom: isSidebarCollapsed ? '0.85rem' : '0.4rem', 
+          width: '100%',
+          position: 'relative' 
+        }}>
+          {!isSidebarCollapsed ? (
+            <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+              <span style={{ fontSize: '1.35rem', flexShrink: 0 }}>🛡️</span>
+              <span style={{ fontSize: '1.25rem', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ZeroTrustNet</span>
+            </div>
+          ) : (
+            <div 
+              onClick={handleToggleCollapse}
+              title="ZeroTrustNet · Click to expand sidebar"
+              style={{ fontSize: '1.5rem', cursor: 'pointer', textAlign: 'center' }}
+            >
+              🛡️
+            </div>
+          )}
+          <button 
+            type="button"
+            className="sidebar-toggle-btn"
+            onClick={handleToggleCollapse}
+            title={isSidebarCollapsed ? "Expand sidebar (or drag border)" : "Collapse sidebar"}
+            style={{
+              background: 'rgba(0, 245, 255, 0.08)',
+              border: '1px solid rgba(0, 245, 255, 0.2)',
+              borderRadius: '6px',
+              color: 'var(--accent-cyan)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '26px',
+              height: '26px',
+              padding: 0,
+              flexShrink: 0,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {isSidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          </button>
         </div>
 
-        <div 
-          onClick={() => handlePageSelect('profile')}
-          title="Click to view Zero Trust Profile"
-          style={{ fontSize: '0.72rem', color: '#3d5470', marginBottom: '0.8rem', padding: '6px 8px', cursor: 'pointer', borderRadius: '6px', transition: 'background 0.2s', background: page === 'profile' ? 'rgba(0, 245, 255, 0.08)' : 'transparent' }}
-        >
-          Logged in as <b style={{ color: '#8aafc8' }}>{user.name}</b>
-          <div style={{ fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px', color: '#4a6275' }}>
-            {user.role === 'admin' ? 'Admin / SOC Analyst' : `${user.department} Department`}
+        {!isSidebarCollapsed && (
+          <div className="sb-logo" style={{ marginTop: '0.1rem', paddingTop: '0.2rem', paddingBottom: '0.8rem' }}>
+            <div className="tagline" style={{ fontSize: '0.66rem', lineHeight: '1.25', color: '#38bdf8', marginTop: '1px', whiteSpace: 'normal' }}>
+              AI Zero Trust Access Verification & Insider Threat Platform
+            </div>
+            <div className="status" style={{ marginTop: '6px' }}>
+              <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', boxShadow: '0 0 5px #22c55e' }}></span>
+              {user.role === 'admin' ? 'SOC Engine Active' : 'Session Verified'}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="nav-menu">
+        {/* User Card */}
+        {!isSidebarCollapsed ? (
+          <div 
+            onClick={() => handlePageSelect('profile')}
+            title="Click to view Zero Trust Profile"
+            className={`sidebar-user-badge ${page === 'profile' ? 'active-page' : ''}`}
+          >
+            <div>
+              Logged in as <strong className="sidebar-user-name">{user.name}</strong>
+            </div>
+            <div className="sidebar-user-role">
+              {user.role === 'admin' ? 'Admin / SOC Analyst' : `${user.department} Department`}
+            </div>
+          </div>
+        ) : (
+          <div
+            onClick={() => handlePageSelect('profile')}
+            title={`Logged in as ${user.name} (${user.role === 'admin' ? 'Admin' : user.department})`}
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              background: page === 'profile' ? 'rgba(0, 245, 255, 0.25)' : 'rgba(0, 245, 255, 0.08)',
+              border: '1px solid rgba(0, 245, 255, 0.3)',
+              color: 'var(--accent-cyan)',
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 0.8rem',
+              cursor: 'pointer',
+              fontSize: '0.85rem'
+            }}
+          >
+            {user.name ? user.name[0].toUpperCase() : 'U'}
+          </div>
+        )}
+
+        {/* Navigation Menu */}
+        <div className="nav-menu" style={{ width: '100%' }}>
           {user.role === 'admin' ? (
             <>
-              <button className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('dashboard')}>
-                <LayoutDashboard size={16} /> SOC Dashboard
+              <button className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('dashboard')} title="SOC Dashboard">
+                <LayoutDashboard size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>SOC Dashboard</span>}
               </button>
-              <button className={`nav-item ${page === 'profile' ? 'active' : ''}`} onClick={() => handlePageSelect('profile')}>
-                <User size={16} /> Identity Profile
+              <button className={`nav-item ${page === 'profile' ? 'active' : ''}`} onClick={() => handlePageSelect('profile')} title="Identity Profile">
+                <User size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Identity Profile</span>}
               </button>
-              <button className={`nav-item ${page === 'ueba' ? 'active' : ''}`} onClick={() => handlePageSelect('ueba')}>
-                <Users size={16} /> Threat Detection & UEBA
+              <button className={`nav-item ${page === 'ueba' ? 'active' : ''}`} onClick={() => handlePageSelect('ueba')} title="Threat Detection & UEBA">
+                <Users size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Threat Detection & UEBA</span>}
               </button>
-              <button className={`nav-item ${page === 'incidents' ? 'active' : ''}`} onClick={() => handlePageSelect('incidents')}>
-                <AlertTriangle size={16} /> Incident Cases
+              <button className={`nav-item ${page === 'incidents' ? 'active' : ''}`} onClick={() => handlePageSelect('incidents')} title="Incident Cases">
+                <AlertTriangle size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Incident Cases</span>}
               </button>
-              <button className={`nav-item ${page === 'policies' ? 'active' : ''}`} onClick={() => handlePageSelect('policies')}>
-                <ShieldAlert size={16} /> Trust Policies
+              <button className={`nav-item ${page === 'policies' ? 'active' : ''}`} onClick={() => handlePageSelect('policies')} title="Trust Policies">
+                <ShieldAlert size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Trust Policies</span>}
               </button>
-              <button className={`nav-item ${page === 'copilot' ? 'active' : ''}`} onClick={() => handlePageSelect('copilot')}>
-                <Cpu size={16} /> AI Security Copilot
+              <button className={`nav-item ${page === 'copilot' ? 'active' : ''}`} onClick={() => handlePageSelect('copilot')} title="AI Security Copilot">
+                <Cpu size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>AI Security Copilot</span>}
               </button>
-              <button className={`nav-item ${page === 'simulation' ? 'active' : ''}`} onClick={() => handlePageSelect('simulation')}>
-                <Zap size={16} /> Attack Simulation
+              <button className={`nav-item ${page === 'simulation' ? 'active' : ''}`} onClick={() => handlePageSelect('simulation')} title="Attack Simulation">
+                <Zap size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Attack Simulation</span>}
               </button>
-              <button className={`nav-item ${page === 'forecast' ? 'active' : ''}`} onClick={() => handlePageSelect('forecast')}>
-                <TrendingUp size={16} /> Projections & Forecast
+              <button className={`nav-item ${page === 'forecast' ? 'active' : ''}`} onClick={() => handlePageSelect('forecast')} title="Projections & Forecast">
+                <TrendingUp size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Projections & Forecast</span>}
               </button>
-              <button className={`nav-item ${page === 'audit' ? 'active' : ''}`} onClick={() => handlePageSelect('audit')}>
-                <FileText size={16} /> Immutable Audits
+              <button className={`nav-item ${page === 'audit' ? 'active' : ''}`} onClick={() => handlePageSelect('audit')} title="Immutable Audits">
+                <FileText size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Immutable Audits</span>}
               </button>
-              <button className={`nav-item ${page === 'reports' ? 'active' : ''}`} onClick={() => handlePageSelect('reports')}>
-                <FileText size={16} /> Reports & PDF Exporter
+              <button className={`nav-item ${page === 'reports' ? 'active' : ''}`} onClick={() => handlePageSelect('reports')} title="Reports & PDF Exporter">
+                <FileText size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Reports & PDF Exporter</span>}
               </button>
-              <button className={`nav-item ${page === 'sandbox' ? 'active' : ''}`} onClick={() => handlePageSelect('sandbox')}>
-                <HelpCircle size={16} /> Risk Sandbox
+              <button className={`nav-item ${page === 'sandbox' ? 'active' : ''}`} onClick={() => handlePageSelect('sandbox')} title="Risk Sandbox">
+                <HelpCircle size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Risk Sandbox</span>}
               </button>
             </>
           ) : (
             <>
-              <button className={`nav-item ${page === 'emp_dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_dashboard')}>
-                <Briefcase size={16} /> My Workspace
+              <button className={`nav-item ${page === 'emp_dashboard' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_dashboard')} title="My Workspace">
+                <Briefcase size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>My Workspace</span>}
               </button>
-              <button className={`nav-item ${page === 'profile' ? 'active' : ''}`} onClick={() => handlePageSelect('profile')}>
-                <User size={16} /> My Security Profile
+              <button className={`nav-item ${page === 'profile' ? 'active' : ''}`} onClick={() => handlePageSelect('profile')} title="My Security Profile">
+                <User size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>My Security Profile</span>}
               </button>
-              <button className={`nav-item ${page === 'emp_timeline' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_timeline')}>
-                <Clock size={16} /> My Session Timeline
+              <button className={`nav-item ${page === 'emp_timeline' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_timeline')} title="My Session Timeline">
+                <Clock size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>My Session Timeline</span>}
               </button>
-              <button className={`nav-item ${page === 'emp_security' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_security')}>
-                <ShieldCheck size={16} /> My Security Standing
+              <button className={`nav-item ${page === 'emp_security' ? 'active' : ''}`} onClick={() => handlePageSelect('emp_security')} title="My Security Standing">
+                <ShieldCheck size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>My Security Standing</span>}
               </button>
             </>
           )}
         </div>
 
-        <div className="sidebar-footer">
-          <button className="nav-item critical" onClick={handleLogout} style={{ border: '1px solid rgba(239, 68, 68, 0.25)' }}>
-            <LogOut size={16} /> Log Out Session
+        {/* Sidebar Footer */}
+        <div className="sidebar-footer" style={{ width: '100%' }}>
+          <button 
+            className="nav-item critical" 
+            onClick={handleLogout} 
+            title="Log Out Session" 
+            style={{ 
+              border: '1px solid rgba(239, 68, 68, 0.25)', 
+              justifyContent: isSidebarCollapsed ? 'center' : 'flex-start' 
+            }}
+          >
+            <LogOut size={16} /> {!isSidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Log Out Session</span>}
           </button>
-          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.75rem', letterSpacing: '0.5px', lineHeight: '1.4' }}>
-            ZeroTrustNet v5.0<br />Never Trust · Always Verify
+          {!isSidebarCollapsed && (
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.75rem', letterSpacing: '0.5px', lineHeight: '1.4' }}>
+              ZeroTrustNet v5.0<br />Never Trust · Always Verify
+            </div>
+          )}
+        </div>
+
+        {/* 📏 Adjustable Resizer Border Handle */}
+        <div 
+          className="sidebar-resizer"
+          onMouseDown={startResizing}
+          onDoubleClick={handleResetWidth}
+          title="Drag left/right to adjust sidebar width · Double-click to reset (295px)"
+        >
+          <div className="resizer-handle-pill">
+            <GripVertical size={11} />
           </div>
         </div>
       </div>

@@ -463,55 +463,30 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
       {/* Real-Time USB / Pendrive / Smartphone Endpoint Insertion Alert Banner (Visible Across All Tabs) */}
       {usbAlerts.length > 0 && (
-        <div style={{
-          background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.25) 0%, rgba(236, 72, 153, 0.16) 100%)',
-          border: '1.5px solid #ef4444',
-          borderRadius: '10px',
-          padding: '1rem 1.25rem',
-          marginBottom: '1.25rem',
-          boxShadow: '0 0 25px rgba(239, 68, 68, 0.38)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}>
+        <div className="usb-alert-banner">
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{
-              background: '#ef4444',
-              color: '#fff',
-              borderRadius: '50%',
-              width: '42px',
-              height: '42px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.3rem',
-              flexShrink: 0,
-              boxShadow: '0 0 12px rgba(239, 68, 68, 0.8)'
-            }}>
+            <div className="usb-alert-icon">
               🔌
             </div>
             <div>
-              <div style={{ color: '#ef4444', fontWeight: '800', fontSize: '0.95rem', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="usb-alert-title">
                 <span>🚨 IMMEDIATE CRITICAL ALERT: USB / PENDRIVE INSERTION DETECTED</span>
                 <span className="zt-badge bc" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>CRITICAL ENDPOINT</span>
               </div>
-              <div style={{ color: '#fee2e2', fontSize: '0.84rem', marginTop: '3px', fontWeight: '500' }}>
+              <div className="usb-alert-message">
                 {usbAlerts[0].message}
               </div>
-              <div style={{ color: '#94a3b8', fontSize: '0.74rem', marginTop: '4px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-                <span>Target: <strong style={{ color: '#f8fafc' }}>{usbAlerts[0].username}</strong></span>
-                <span>Channel: <strong style={{ color: '#38bdf8' }}>{usbAlerts[0].channel}</strong></span>
-                <span>Reported: <strong style={{ color: '#cbd5e1' }}>{new Date(usbAlerts[0].sent_at).toLocaleTimeString()}</strong></span>
-                <span>Status: <strong style={{ color: '#22c55e' }}>{usbAlerts[0].status}</strong></span>
+              <div className="usb-alert-meta">
+                <span className="usb-alert-target">Target: <strong>{usbAlerts[0].username}</strong></span>
+                <span className="usb-alert-channel">Channel: <strong>{usbAlerts[0].channel}</strong></span>
+                <span className="usb-alert-reported">Reported: <strong>{formatLocalDateTime(usbAlerts[0].sent_at)}</strong></span>
+                <span className="usb-alert-status">Status: <strong>{usbAlerts[0].status}</strong></span>
               </div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.6rem' }}>
             <button 
-              className="zt-btn" 
-              style={{ background: '#ef4444', color: '#fff', fontSize: '0.8rem', padding: '0.5rem 1rem', fontWeight: 'bold' }}
+              className="usb-alert-btn" 
               onClick={() => setActiveTab('notifications')}
             >
               <PhoneCall size={14} /> View Dispatches ({usbAlerts.length})

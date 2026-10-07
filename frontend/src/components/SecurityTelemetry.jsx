@@ -74,14 +74,14 @@ export default function SecurityTelemetry({ token, user, initialData }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '1.4rem' }}>🛡️</span>
-            <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800, color: '#f8fafc' }}>
+            <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-heading)' }}>
               Security & Zero Trust Telemetry
             </h2>
-            <span className="zt-badge" style={{ background: 'rgba(0, 245, 255, 0.12)', color: '#00f5ff', border: '1px solid rgba(0, 245, 255, 0.3)', fontSize: '0.7rem' }}>
+            <span className="zt-badge" style={{ background: 'rgba(2, 132, 199, 0.12)', color: 'var(--accent-cyan)', border: '1px solid rgba(2, 132, 199, 0.3)', fontSize: '0.74rem' }}>
               NIST SP 800-207
             </span>
           </div>
-          <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
             Continuous Behavioral Evaluation · Multi-Layer AI Risk Scoring · Hardware Endpoint Integrity
           </div>
         </div>
@@ -89,7 +89,7 @@ export default function SecurityTelemetry({ token, user, initialData }) {
         <button 
           onClick={() => { fetchTelemetry(); loadRealLocation(); }}
           className="zt-btn zt-btn-sec"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '0.45rem 0.9rem' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '0.45rem 0.95rem' }}
           title="Refresh live telemetry"
         >
           <RefreshCw size={14} /> Refresh Live Telemetry
@@ -100,42 +100,39 @@ export default function SecurityTelemetry({ token, user, initialData }) {
       <div className="zt-card" style={{
         padding: '1.2rem 1.4rem',
         marginBottom: '1.25rem',
-        background: 'linear-gradient(135deg, rgba(0, 245, 255, 0.05) 0%, rgba(15, 23, 42, 0.85) 100%)',
-        border: '1px solid rgba(0, 245, 255, 0.25)',
-        borderRadius: '12px',
-        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.35)'
+        borderRadius: '12px'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div style={{
-              width: '36px',
-              height: '36px',
+              width: '38px',
+              height: '38px',
               borderRadius: '8px',
-              background: 'linear-gradient(135deg, #00f5ff, #0080ff)',
+              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#0f172a',
+              color: '#ffffff',
               fontWeight: 'bold'
             }}>
               <CheckCircle2 size={20} />
             </div>
             <div>
-              <div style={{ color: '#00f5ff', fontWeight: '800', fontSize: '1rem', letterSpacing: '0.3px' }}>
+              <div style={{ color: 'var(--accent-cyan)', fontWeight: '800', fontSize: '1.05rem', letterSpacing: '0.3px' }}>
                 Enterprise Secure Session Active (Step 1 Authentication)
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 Continuous Monitoring Engine Connected · Cryptographically Signed JWT Token
               </div>
             </div>
           </div>
           <div style={{
-            padding: '0.35rem 0.8rem',
+            padding: '0.4rem 0.85rem',
             borderRadius: '6px',
             background: 'rgba(16, 185, 129, 0.12)',
             border: '1px solid rgba(16, 185, 129, 0.3)',
             color: '#10b981',
-            fontSize: '0.78rem',
+            fontSize: '0.82rem',
             fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
@@ -151,48 +148,48 @@ export default function SecurityTelemetry({ token, user, initialData }) {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
           gap: '0.85rem',
-          padding: '0.95rem',
-          background: 'rgba(15, 23, 42, 0.65)',
+          padding: '1rem',
+          background: 'var(--bg-table-header)',
           borderRadius: '10px',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-          fontSize: '0.8rem'
+          border: '1px solid var(--border-subtle)',
+          fontSize: '0.84rem'
         }}>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>1. Employee ID</div>
-            <div style={{ color: '#00f5ff', fontWeight: 'bold', fontFamily: 'monospace' }}>{u.user_id || u.username || 'EMP-1024'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>1. Employee ID</div>
+            <div style={{ color: 'var(--accent-cyan)', fontWeight: 'bold', fontFamily: 'monospace' }}>{u.user_id || u.username || 'EMP-1024'}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>2. Department</div>
-            <div style={{ color: '#e2e8f0', fontWeight: '600' }}>{u.department || 'Engineering'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>2. Department</div>
+            <div style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{u.department || 'Engineering'}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>3. Role</div>
-            <div style={{ color: '#38bdf8', fontWeight: '600', textTransform: 'capitalize' }}>{u.role || 'Employee'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>3. Role</div>
+            <div style={{ color: 'var(--accent-blue)', fontWeight: '600', textTransform: 'capitalize' }}>{u.role || 'Employee'}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>4. Device ID</div>
-            <div style={{ color: '#a7f3d0', fontWeight: 'bold', fontFamily: 'monospace' }}>{u.device_id || 'DEV-89412-WIN'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>4. Device ID</div>
+            <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontFamily: 'monospace' }}>{u.device_id || 'DEV-89412-WIN'}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>5. Browser</div>
-            <div style={{ color: '#e2e8f0' }}>{u.browser || 'Google Chrome 127'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>5. Browser</div>
+            <div style={{ color: 'var(--text-primary)' }}>{u.browser || 'Google Chrome 127'}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>6. Operating System</div>
-            <div style={{ color: '#e2e8f0' }}>{u.os || 'Windows 11 Enterprise'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>6. Operating System</div>
+            <div style={{ color: 'var(--text-primary)' }}>{u.os || 'Windows 11 Enterprise'}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>7. Login Time</div>
-            <div style={{ color: '#fbbf24', fontSize: '0.74rem' }}>{formatLocalTime(u.login_time)}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>7. Login Time</div>
+            <div style={{ color: 'var(--accent-amber)', fontSize: '0.78rem' }}>{formatLocalTime(u.login_time)}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>8. IP Address</div>
-            <div style={{ color: '#f472b6', fontFamily: 'monospace' }}>{u.ip || '192.168.1.105'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>8. IP Address</div>
+            <div style={{ color: '#db2777', fontFamily: 'monospace', fontWeight: '600' }}>{u.ip || '192.168.1.105'}</div>
           </div>
           <div>
-            <div style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 'bold' }}>9. Location</div>
-            <div style={{ color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <MapPin size={13} color="#00f5ff" />
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 'bold' }}>9. Location</div>
+            <div style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <MapPin size={14} color="var(--accent-cyan)" />
               <span>{locLoading ? 'Detecting live address...' : (realLocation?.shortLocation || realLocation?.address || u.location || 'Local Workstation')}</span>
             </div>
           </div>
@@ -200,21 +197,20 @@ export default function SecurityTelemetry({ token, user, initialData }) {
 
         {/* Real-time System Physical Location & Verified Address Banner */}
         <div style={{
-          marginTop: '0.95rem',
-          padding: '0.95rem 1.15rem',
-          background: 'linear-gradient(135deg, rgba(0, 245, 255, 0.06), rgba(16, 185, 129, 0.06))',
-          border: '1px solid rgba(0, 245, 255, 0.3)',
-          borderRadius: '10px',
-          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.25)'
+          marginTop: '1rem',
+          padding: '1rem 1.2rem',
+          background: 'var(--bg-table-header)',
+          border: '1px solid var(--border-card)',
+          borderRadius: '10px'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.86rem', color: '#00f5ff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--accent-cyan)' }}>
               <Navigation size={16} />
               <span>System Real-Time Physical Location & Verified Address</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ 
-                fontSize: '0.72rem', 
+                fontSize: '0.76rem', 
                 color: '#10b981', 
                 background: 'rgba(16, 185, 129, 0.12)', 
                 padding: '3px 8px', 
@@ -232,13 +228,11 @@ export default function SecurityTelemetry({ token, user, initialData }) {
                 type="button" 
                 onClick={loadRealLocation}
                 disabled={locLoading}
+                className="zt-btn zt-btn-sec"
                 style={{
-                  background: 'rgba(0, 245, 255, 0.12)',
-                  border: '1px solid rgba(0, 245, 255, 0.35)',
-                  color: '#00f5ff',
                   padding: '3px 8px',
                   borderRadius: '4px',
-                  fontSize: '0.72rem',
+                  fontSize: '0.76rem',
                   cursor: 'pointer'
                 }}
               >
@@ -247,12 +241,12 @@ export default function SecurityTelemetry({ token, user, initialData }) {
             </div>
           </div>
 
-          <div style={{ marginTop: '6px', fontSize: '0.84rem', color: '#f8fafc', lineHeight: '1.45', background: 'rgba(0, 0, 0, 0.3)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <strong style={{ color: '#00f5ff' }}>Real-Time Physical Address:</strong>{' '}
+          <div style={{ marginTop: '6px', fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: '1.45', background: 'var(--bg-card)', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+            <strong style={{ color: 'var(--accent-cyan)' }}>Real-Time Physical Address:</strong>{' '}
             {locLoading ? (
-              <span style={{ color: '#94a3b8' }}>Detecting precise address from client device...</span>
+              <span style={{ color: 'var(--text-muted)' }}>Detecting precise address from client device...</span>
             ) : (
-              <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{realLocation?.address || 'Unable to retrieve precise street address'}</span>
+              <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>{realLocation?.address || 'Unable to retrieve precise street address'}</span>
             )}
           </div>
 

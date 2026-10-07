@@ -13,6 +13,8 @@ from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 import jwt
 import pandas as pd
+import numpy as np
+import math
 import io
 import zipfile
 import tarfile
@@ -528,6 +530,27 @@ def log_audit(user_id, username, name, dept, event_type, details, ip, device, ri
     except Exception:
         pass
 
+def clean_records_for_json(records):
+    """
+    Cleans a list of dict records so that any NaN or float inf is replaced with None (valid JSON null),
+    preventing 'Unexpected token N in JSON at position...' errors in frontend browsers.
+    """
+    cleaned = []
+    for r in records:
+        row_clean = {}
+        for k, v in r.items():
+            if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+                row_clean[k] = None
+            elif isinstance(v, list):
+                row_clean[k] = [
+                    None if (isinstance(item, float) and (np.isnan(item) or np.isinf(item))) else item
+                    for item in v
+                ]
+            else:
+                row_clean[k] = v
+        cleaned.append(row_clean)
+    return cleaned
+
 _EVAL_CACHE = {"timestamp": 0, "data": None}
 
 def invalidate_eval_cache():
@@ -545,7 +568,10 @@ def load_all_evaluated():
     c.execute("""
         SELECT u.id, u.username, u.name, u.department, u.emp_type, u.is_active,
                COALESCE(u.approval_status, 'Approved') as approval_status,
-               u.created_at, u.reviewed_at, u.reviewed_by, b.*
+               u.created_at,
+               COALESCE(u.reviewed_at, '') as reviewed_at,
+               COALESCE(u.reviewed_by, '') as reviewed_by,
+               b.*
         FROM users u
         LEFT JOIN behavior_data b ON b.user_id = u.id
         WHERE u.role='employee'
@@ -558,6 +584,13 @@ def load_all_evaluated():
 
     df = pd.DataFrame(rows, columns=cols)
     df = df.loc[:,~df.columns.duplicated()]
+
+    # Sanitize any NaN or None in columns to prevent JSON serialization errors
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].fillna('')
+        else:
+            df[col] = df[col].fillna(0)
 
     ml_flags = run_ml_engine(df)
 
@@ -590,11 +623,11 @@ def load_all_evaluated():
                 try:
                     ev_dt = datetime.fromisoformat(ev_ts)
                     if ev_dt.tzinfo is not None:
-                        t_str = ev_dt.astimezone().strftime("%H:%M")
+                        t_str = ev_dt.astimezone().strftime("%I:%M %p")
                     else:
-                        t_str = ev_dt.strftime("%H:%M")
+                        t_str = ev_dt.strftime("%I:%M %p")
                 except Exception:
-                    t_str = str(ev_ts)[11:16] if len(str(ev_ts)) >= 16 else datetime.now().strftime("%H:%M")
+                    t_str = datetime.now().strftime("%I:%M %p")
                 events.append({
                     "time": t_str,
                     "desc": f"{ev_type}: {ev_det}",
@@ -602,11 +635,11 @@ def load_all_evaluated():
                 })
         else:
             now_dt = datetime.now()
-            t_now = now_dt.strftime("%H:%M")
-            t_m5 = (now_dt - timedelta(minutes=5)).strftime("%H:%M")
-            t_m10 = (now_dt - timedelta(minutes=10)).strftime("%H:%M")
-            t_m15 = (now_dt - timedelta(minutes=15)).strftime("%H:%M")
-            t_m20 = (now_dt - timedelta(minutes=20)).strftime("%H:%M")
+            t_now = now_dt.strftime("%I:%M %p")
+            t_m5 = (now_dt - timedelta(minutes=5)).strftime("%I:%M %p")
+            t_m10 = (now_dt - timedelta(minutes=10)).strftime("%I:%M %p")
+            t_m15 = (now_dt - timedelta(minutes=15)).strftime("%I:%M %p")
+            t_m20 = (now_dt - timedelta(minutes=20)).strftime("%I:%M %p")
 
             events = [{"time": t_m20, "desc": f"Active Session: {bd.get('current_login_location','Office')}", "flagged": False}]
             if bd.get('failed_logins', 0):
@@ -1798,7 +1831,7 @@ def employee_download_report():
         [Paragraph("<b>Employee Name:</b>", body_style), Paragraph(str(name), body_style), Paragraph("<b>Employee ID:</b>", body_style), Paragraph(str(uid), body_style)],
         [Paragraph("<b>Department:</b>", body_style), Paragraph(str(dept), body_style), Paragraph("<b>User Role:</b>", body_style), Paragraph(str(role).capitalize(), body_style)],
         [Paragraph("<b>IP Address:</b>", body_style), Paragraph(str(ip), body_style), Paragraph("<b>Device:</b>", body_style), Paragraph(str(device), body_style)],
-        [Paragraph("<b>Location:</b>", body_style), Paragraph(str(location), body_style), Paragraph("<b>Generated At:</b>", body_style), Paragraph(datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'), body_style)],
+        [Paragraph("<b>Location:</b>", body_style), Paragraph(str(location), body_style), Paragraph("<b>Generated At:</b>", body_style), Paragraph(datetime.now().strftime('%Y-%m-%d %I:%M:%S %p UTC'), body_style)],
     ]
     meta_table = Table(meta_data, colWidths=[130, 220, 130, 220])
     meta_table.setStyle(TableStyle([
@@ -2853,8 +2886,8 @@ def admin_sim_attack():
 
     elif vector in ["travel", "impossible_travel"]:
         now_dt = datetime.now()
-        t1 = (now_dt - timedelta(minutes=8)).strftime("%H:%M")
-        t2 = now_dt.strftime("%H:%M")
+        t1 = (now_dt - timedelta(minutes=8)).strftime("%I:%M %p")
+        t2 = now_dt.strftime("%I:%M %p")
         c.execute("UPDATE behavior_data SET impossible_travel_flag=1, impossible_travel_details=?, device_known=0, current_login_location='Russia', mitre_techniques=?, mitre_confidence=97 WHERE user_id=?",
                      (f"Office ({t1}) → Moscow IP ({t2}). Travel time: 10 Hours.", "T1133 (External Remote Services)", uid))
         vector_meta = {
@@ -3025,11 +3058,11 @@ def admin_live_activity():
         try:
             dt = datetime.fromisoformat(ts)
             if dt.tzinfo is not None:
-                time_str = dt.astimezone().strftime("%H:%M")
+                time_str = dt.astimezone().strftime("%I:%M %p")
             else:
-                time_str = dt.strftime("%H:%M")
+                time_str = dt.strftime("%I:%M %p")
         except Exception:
-            time_str = datetime.now().strftime("%H:%M")
+            time_str = datetime.now().strftime("%I:%M %p")
 
         siem_stream.append({
             "time": time_str,
@@ -3102,7 +3135,7 @@ def admin_download_report():
         filename = "Security_Audit_Report.pdf"
 
     elements.append(Paragraph(doc_title, title_style))
-    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')} | Security Classification: CONFIDENTIAL / SOC INTERNAL", subtitle_style))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p UTC')} | Security Classification: CONFIDENTIAL / SOC INTERNAL", subtitle_style))
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0050b3'), spaceBefore=2, spaceAfter=12))
 
@@ -3256,7 +3289,8 @@ def admin_employees_list():
     df = load_all_evaluated()
     if df.empty:
         return jsonify([])
-    return jsonify(df.to_dict(orient='records'))
+    records = df.to_dict(orient='records')
+    return jsonify(clean_records_for_json(records))
 
 @app.route('/api/admin/registration-requests', methods=['GET'])
 def admin_registration_requests():

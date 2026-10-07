@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, Shield, ShieldCheck, MapPin, Laptop, Smartphone, Key, Lock, 
   Clock, Activity, Globe, CheckCircle2, AlertTriangle, RefreshCw, 
-  Download, ArrowLeft, Eye, EyeOff, Check, X, FileText, SmartphoneCharging
+  ArrowLeft, Eye, EyeOff, Check, X, FileText, SmartphoneCharging
 } from 'lucide-react';
 import { formatLocalDateTime, formatLocalTime } from '../utils/timeFormat';
 import SecurityTelemetry from '../components/SecurityTelemetry';
@@ -80,32 +80,6 @@ export default function Profile({ token, user, onBack }) {
     }
   };
 
-  const handleDownloadIdentity = () => {
-    if (!profileData) return;
-    const cert = {
-      platform: "ZeroTrustNet Continuous Cyber Verification System",
-      certificate_type: "Zero Trust Cryptographic Identity Verification Token",
-      issued_at: new Date().toISOString(),
-      user: profileData.user,
-      security_baseline: profileData.baseline,
-      session: profileData.session,
-      risk_posture: {
-        risk_score: profileData.risk_score,
-        threat_classification: profileData.threat_classification
-      },
-      clearance_tier: profileData.user.role === 'admin' ? "Tier-1 Administrative Clearance" : "Tier-3 Standard Employee Clearance",
-      active_policies_enforcing: profileData.policies || []
-    };
-
-    const blob = new Blob([JSON.stringify(cert, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ZeroTrust_Identity_${profileData.user.username}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '5rem 1rem' }}>
@@ -168,14 +142,6 @@ export default function Profile({ token, user, onBack }) {
           >
             <RefreshCw size={14} /> Refresh
           </button>
-          <button 
-            onClick={handleDownloadIdentity}
-            className="zt-btn"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', background: 'linear-gradient(135deg, #0284c7, #00f5ff)', color: '#030816', fontWeight: 'bold' }}
-            title="Download signed JSON clearance badge"
-          >
-            <Download size={14} /> Identity Token
-          </button>
         </div>
       </div>
 
@@ -192,16 +158,15 @@ export default function Profile({ token, user, onBack }) {
         <button
           className={`zt-btn ${activeProfileTab === 'identity' ? '' : 'zt-btn-sec'}`}
           style={{
-            padding: '0.55rem 1.25rem',
-            fontSize: '0.88rem',
+            padding: '0.6rem 1.35rem',
+            fontSize: '0.94rem',
             fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            background: activeProfileTab === 'identity' ? 'linear-gradient(135deg, rgba(0, 245, 255, 0.25), rgba(0, 128, 255, 0.3))' : 'rgba(15, 23, 42, 0.6)',
-            borderColor: activeProfileTab === 'identity' ? '#00f5ff' : 'rgba(255, 255, 255, 0.1)',
-            color: activeProfileTab === 'identity' ? '#00f5ff' : '#94a3b8',
-            boxShadow: activeProfileTab === 'identity' ? '0 0 15px rgba(0, 245, 255, 0.25)' : 'none'
+            background: activeProfileTab === 'identity' ? 'rgba(2, 132, 199, 0.16)' : 'var(--bg-card)',
+            borderColor: activeProfileTab === 'identity' ? 'var(--accent-cyan)' : 'var(--border-subtle)',
+            color: activeProfileTab === 'identity' ? 'var(--accent-cyan)' : 'var(--text-muted)'
           }}
           onClick={() => setActiveProfileTab('identity')}
         >
@@ -211,16 +176,15 @@ export default function Profile({ token, user, onBack }) {
         <button
           className={`zt-btn ${activeProfileTab === 'telemetry' ? '' : 'zt-btn-sec'}`}
           style={{
-            padding: '0.55rem 1.25rem',
-            fontSize: '0.88rem',
+            padding: '0.6rem 1.35rem',
+            fontSize: '0.94rem',
             fontWeight: '600',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            background: activeProfileTab === 'telemetry' ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(126, 34, 206, 0.3))' : 'rgba(15, 23, 42, 0.6)',
-            borderColor: activeProfileTab === 'telemetry' ? '#c084fc' : 'rgba(255, 255, 255, 0.1)',
-            color: activeProfileTab === 'telemetry' ? '#c084fc' : '#94a3b8',
-            boxShadow: activeProfileTab === 'telemetry' ? '0 0 15px rgba(168, 85, 247, 0.25)' : 'none'
+            background: activeProfileTab === 'telemetry' ? 'rgba(124, 58, 237, 0.16)' : 'var(--bg-card)',
+            borderColor: activeProfileTab === 'telemetry' ? 'var(--accent-purple)' : 'var(--border-subtle)',
+            color: activeProfileTab === 'telemetry' ? 'var(--accent-purple)' : 'var(--text-muted)'
           }}
           onClick={() => setActiveProfileTab('telemetry')}
         >
@@ -234,12 +198,12 @@ export default function Profile({ token, user, onBack }) {
         <>
           {/* 👤 HERO IDENTITY BANNER CARD */}
       <div className="zt-card" style={{
-        background: 'linear-gradient(135deg, rgba(13, 27, 62, 0.95), rgba(3, 9, 30, 0.98))',
-        border: '1.5px solid rgba(0, 245, 255, 0.28)',
+        background: 'var(--bg-card-elevated)',
+        border: '1.5px solid var(--border-card)',
         borderRadius: '14px',
         padding: '1.5rem',
         marginBottom: '1.5rem',
-        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.45)',
+        boxShadow: 'var(--card-shadow)',
         position: 'relative',
         overflow: 'hidden'
       }}>
@@ -292,37 +256,37 @@ export default function Profile({ token, user, onBack }) {
 
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#ffffff' }}>
+                <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-heading)' }}>
                   {u.name || 'User'}
                 </h2>
                 <span className="zt-badge" style={{
                   background: isAdmin ? 'rgba(0, 245, 255, 0.15)' : 'rgba(16, 185, 129, 0.15)',
                   color: isAdmin ? '#00f5ff' : '#10b981',
                   border: `1px solid ${isAdmin ? 'rgba(0, 245, 255, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
-                  fontSize: '0.72rem',
+                  fontSize: '0.74rem',
                   fontWeight: 700
                 }}>
                   {isAdmin ? '🛡️ SOC LEAD ADMINISTRATOR' : `🏢 ${u.emp_type || 'Full-Time Employee'}`}
                 </span>
-                <span className="zt-badge bl" style={{ fontSize: '0.7rem' }}>
+                <span className="zt-badge bl" style={{ fontSize: '0.74rem' }}>
                   ID: {u.id || 'U001'}
                 </span>
               </div>
 
-              <div style={{ display: 'flex', gap: '16px', marginTop: '6px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#8aafc8' }}>
-                <span>Username: <strong style={{ color: '#00f5ff' }}>@{u.username}</strong></span>
-                <span>Department: <strong style={{ color: '#f1f5f9' }}>{u.department || 'Security Operations'}</strong></span>
-                <span>Corporate Email: <strong style={{ color: '#cbd5e1' }}>{u.email || `${u.username}@zerotrustnet.io`}</strong></span>
+              <div style={{ display: 'flex', gap: '16px', marginTop: '6px', flexWrap: 'wrap', fontSize: '0.86rem', color: 'var(--text-muted)' }}>
+                <span>Username: <strong style={{ color: 'var(--accent-cyan)' }}>@{u.username}</strong></span>
+                <span>Department: <strong style={{ color: 'var(--text-primary)' }}>{u.department || 'Security Operations'}</strong></span>
+                <span>Corporate Email: <strong style={{ color: 'var(--text-primary)' }}>{u.email || `${u.username}@zerotrustnet.io`}</strong></span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '8px', fontSize: '0.76rem', color: '#64748b', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <ShieldCheck size={14} color="#22c55e" />
                   Clearance: <strong style={{ color: '#22c55e' }}>{isAdmin ? 'Tier-1 Privileged Access' : 'Tier-3 Standard Verification'}</strong>
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Clock size={14} color="#38bdf8" />
-                  Account Enrolled: <strong style={{ color: '#cbd5e1' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Active'}</strong>
+                  <Clock size={14} color="var(--accent-blue)" />
+                  Account Enrolled: <strong style={{ color: 'var(--text-primary)' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Active'}</strong>
                 </span>
               </div>
             </div>
