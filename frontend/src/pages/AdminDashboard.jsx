@@ -27,12 +27,15 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [stepUpLoading, setStepUpLoading] = useState(false);
   const [stepUpError, setStepUpError] = useState('');
 
-  const parseJsonSafe = async (res) => {
-    const text = await res.text();
+  const parseJsonSafe = async (res, defaultVal = null) => {
+    if (!res) return defaultVal;
     try {
+      const text = await res.text();
+      if (!text || !text.trim()) return defaultVal;
       return JSON.parse(text);
-    } catch {
-      throw new Error(`Server returned HTTP ${res.status}`);
+    } catch (e) {
+      console.warn(`JSON parse error on ${res.url || 'endpoint'} (HTTP ${res.status}):`, e);
+      return defaultVal;
     }
   };
 
@@ -56,37 +59,35 @@ export default function AdminDashboard({ token, user, onLogout }) {
         return;
       }
 
-      const dashData = await parseJsonSafe(dashRes);
-      const empData = await parseJsonSafe(empRes);
-      const sessData = await parseJsonSafe(sessRes);
-      const notifData = await parseJsonSafe(notifRes);
-      const devData = await parseJsonSafe(devRes);
-      const liveData = await parseJsonSafe(liveRes);
-      const mfaData = mfaRes.ok ? await parseJsonSafe(mfaRes) : [];
-      const trustDevData = trustDevRes.ok ? await parseJsonSafe(trustDevRes) : [];
-      const appealData = appealRes.ok ? await parseJsonSafe(appealRes) : [];
-      const regData = regRes.ok ? await parseJsonSafe(regRes) : [];
-
       if (!dashRes.ok) {
-        if (dashData.error === 'Invalid token' && onLogout) {
-          onLogout();
-          return;
-        }
-        throw new Error(dashData.error || 'Failed to load SOC dashboard');
+        const errObj = await parseJsonSafe(dashRes, {});
+        throw new Error(errObj?.error || `Failed to load SOC dashboard (HTTP ${dashRes.status})`);
       }
+
+      const dashData = await parseJsonSafe(dashRes, {});
+      const empData = await parseJsonSafe(empRes, []);
+      const sessData = await parseJsonSafe(sessRes, []);
+      const notifData = await parseJsonSafe(notifRes, []);
+      const devData = await parseJsonSafe(devRes, []);
+      const liveData = await parseJsonSafe(liveRes, []);
+      const mfaData = await parseJsonSafe(mfaRes, []);
+      const trustDevData = await parseJsonSafe(trustDevRes, []);
+      const appealData = await parseJsonSafe(appealRes, []);
+      const regData = await parseJsonSafe(regRes, []);
       
-      setData(dashData);
-      setEmployees(empData || []);
-      setSessions(sessData || []);
-      setNotifications(notifData || []);
-      setDeviceTrust(devData || []);
-      setLiveActivity(liveData || []);
-      setMfaEvents(mfaData || []);
-      setTrustedDevices(trustDevData || []);
-      setAppeals(appealData || []);
-      setRegRequests(regData || []);
+      setData(dashData || {});
+      setEmployees(Array.isArray(empData) ? empData : []);
+      setSessions(Array.isArray(sessData) ? sessData : []);
+      setNotifications(Array.isArray(notifData) ? notifData : []);
+      setDeviceTrust(Array.isArray(devData) ? devData : []);
+      setLiveActivity(Array.isArray(liveData) ? liveData : []);
+      setMfaEvents(Array.isArray(mfaData) ? mfaData : []);
+      setTrustedDevices(Array.isArray(trustDevData) ? trustDevData : []);
+      setAppeals(Array.isArray(appealData) ? appealData : (appealData?.appeals || []));
+      setRegRequests(Array.isArray(regData) ? regData : (regData?.requests || []));
       setError('');
     } catch (err) {
+      console.error("fetchSOCData error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -223,7 +224,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
         },
         body: JSON.stringify({ action, notes })
       });
-      const resData = await parseJsonSafe(res);
+      const resData = (await parseJsonSafe(res, {})) || {};
       if (!res.ok) throw new Error(resData.error || 'Failed to update appeal');
       setActionMsg(`✅ ${resData.message}`);
       setTimeout(() => setActionMsg(''), 4000);
@@ -243,7 +244,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
         },
         body: JSON.stringify({ action, notes })
       });
-      const resData = await parseJsonSafe(res);
+      const resData = (await parseJsonSafe(res, {})) || {};
       if (!res.ok) throw new Error(resData.error || 'Failed to update registration status');
       setActionMsg(`✅ ${resData.message}`);
       setTimeout(() => setActionMsg(''), 4500);
@@ -255,8 +256,9 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   if (loading) return <div style={{ padding: '2rem', color: '#00f5ff' }}>Loading Enterprise SOC Dashboard...</div>;
   if (error) return <div style={{ padding: '2rem', color: '#ef4444' }}>Error: {error}</div>;
+  if (!data || !data.stats) return <div style={{ padding: '2rem', color: '#ef4444' }}>Error: Unable to load SOC telemetry statistics</div>;
 
-  const { stats, severity_distribution, department_risk, active_alerts, trend } = data;
+  const { stats = {}, severity_distribution = {}, department_risk = {}, active_alerts = [], trend = [] } = data || {};
 
   // Insider Threat Classification counts
   const normalCount = employees.filter(e => (e.threat_classification || 'Normal') === 'Normal').length;
