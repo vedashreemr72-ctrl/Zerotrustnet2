@@ -1167,43 +1167,6 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
                     </button>
                   </div>
                 )}
-
-                {/* Evaluator Live Code Helper */}
-                {totpSetup.current_otp && (
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '4px 8px',
-                    background: 'rgba(16, 185, 129, 0.1)',
-                    border: '1px solid rgba(16, 185, 129, 0.25)',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    fontSize: '0.72rem',
-                    color: '#10b981'
-                  }}>
-                    <span>Demo / Test OTP:</span>
-                    <code style={{ fontWeight: 'bold', letterSpacing: '1.5px', color: '#34d399', fontSize: '0.82rem' }}>
-                      {totpSetup.current_otp}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => setWorkspaceOtpInput(totpSetup.current_otp)}
-                      style={{
-                        background: 'rgba(16, 185, 129, 0.2)',
-                        border: '1px solid rgba(16, 185, 129, 0.4)',
-                        color: '#34d399',
-                        borderRadius: '4px',
-                        padding: '2px 6px',
-                        cursor: 'pointer',
-                        fontSize: '0.68rem',
-                        fontWeight: '600'
-                      }}
-                    >
-                      Auto-Fill
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           </div>
