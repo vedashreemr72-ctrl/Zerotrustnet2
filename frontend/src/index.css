@@ -2735,5 +2735,88 @@ code, pre, kbd, samp {
   pointer-events: none !important;
 }
 
+/* ==========================================================================
+   🚨 ZERO TRUST DLP SCREEN SHIELD HIGH-VISIBILITY COLOR OVERRIDES
+   Guaranteed crystal-clear letters in BOTH Light and Dark themes
+   ========================================================================== */
+
+#ztn-dlp-shield,
+[data-theme="light"] #ztn-dlp-shield {
+  background-color: #030712 !important;
+  color: #ffffff !important;
+}
+
+#ztn-dlp-shield h1,
+[data-theme="light"] #ztn-dlp-shield h1,
+.dlp-heading,
+[data-theme="light"] .dlp-heading {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  text-shadow: 0 0 25px rgba(239, 68, 68, 0.8), 0 2px 10px rgba(0, 0, 0, 0.95) !important;
+  font-weight: 900 !important;
+}
+
+#ztn-dlp-shield p,
+[data-theme="light"] #ztn-dlp-shield p,
+.dlp-paragraph,
+[data-theme="light"] .dlp-paragraph {
+  color: #f1f5f9 !important;
+  -webkit-text-fill-color: #f1f5f9 !important;
+}
+
+#ztn-dlp-shield .dlp-tagline,
+[data-theme="light"] #ztn-dlp-shield .dlp-tagline {
+  color: #ff4d4d !important;
+  -webkit-text-fill-color: #ff4d4d !important;
+}
+
+#ztn-dlp-shield .dlp-badge-intercepted,
+[data-theme="light"] #ztn-dlp-shield .dlp-badge-intercepted {
+  background: rgba(239, 68, 68, 0.22) !important;
+  border: 1px solid #ef4444 !important;
+  color: #fca5a5 !important;
+  -webkit-text-fill-color: #fca5a5 !important;
+}
+
+#ztn-dlp-shield .dlp-badge-intercepted strong,
+[data-theme="light"] #ztn-dlp-shield .dlp-badge-intercepted strong {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+#ztn-dlp-shield .dlp-badge-policy,
+[data-theme="light"] #ztn-dlp-shield .dlp-badge-policy {
+  background: rgba(0, 245, 255, 0.15) !important;
+  border: 1px solid #00f5ff !important;
+  color: #7dd3fc !important;
+  -webkit-text-fill-color: #7dd3fc !important;
+}
+
+#ztn-dlp-shield .dlp-badge-policy strong,
+[data-theme="light"] #ztn-dlp-shield .dlp-badge-policy strong {
+  color: #00f5ff !important;
+  -webkit-text-fill-color: #00f5ff !important;
+}
+
+#ztn-dlp-shield .dlp-badge-soc,
+[data-theme="light"] #ztn-dlp-shield .dlp-badge-soc {
+  background: rgba(245, 158, 11, 0.18) !important;
+  border: 1px solid #f59e0b !important;
+  color: #fcd34d !important;
+  -webkit-text-fill-color: #fcd34d !important;
+}
+
+#ztn-dlp-shield .dlp-badge-soc strong,
+[data-theme="light"] #ztn-dlp-shield .dlp-badge-soc strong {
+  color: #fef08a !important;
+  -webkit-text-fill-color: #fef08a !important;
+}
+
+#ztn-dlp-shield .dlp-footer,
+[data-theme="light"] #ztn-dlp-shield .dlp-footer {
+  color: #cbd5e1 !important;
+  -webkit-text-fill-color: #cbd5e1 !important;
+}
+
 
 

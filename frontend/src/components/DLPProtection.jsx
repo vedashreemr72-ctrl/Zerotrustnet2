@@ -216,12 +216,12 @@ export default function DLPProtection({ user, token }) {
               width: '110px',
               height: '110px',
               borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(239, 68, 68, 0.25) 0%, rgba(239, 68, 68, 0.05) 70%)',
+              background: 'radial-gradient(circle, rgba(239, 68, 68, 0.3) 0%, rgba(239, 68, 68, 0.08) 70%)',
               border: '2px solid #ef4444',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 0 50px rgba(239, 68, 68, 0.6), inset 0 0 20px rgba(239, 68, 68, 0.4)',
+              boxShadow: '0 0 50px rgba(239, 68, 68, 0.65), inset 0 0 20px rgba(239, 68, 68, 0.45)',
               marginBottom: '1.75rem'
             }}
           >
@@ -229,42 +229,46 @@ export default function DLPProtection({ user, token }) {
           </div>
 
           <div
+            className="dlp-tagline"
             style={{
-              color: '#ef4444',
-              fontSize: '0.9rem',
+              color: '#ff4d4d',
+              fontSize: '0.95rem',
               fontWeight: '800',
               letterSpacing: '3.5px',
               textTransform: 'uppercase',
-              marginBottom: '0.6rem',
+              marginBottom: '0.75rem',
               display: 'flex',
               alignItems: 'center',
               gap: '8px'
             }}
           >
-            <ShieldAlert size={18} /> ZERO TRUST DATA LOSS PREVENTION (DLP)
+            <ShieldAlert size={20} color="#ff4d4d" /> ZERO TRUST DATA LOSS PREVENTION (DLP)
           </div>
 
           <h1
+            className="dlp-heading"
             style={{
               color: '#ffffff',
-              fontSize: '2.2rem',
+              fontSize: '2.5rem',
               fontWeight: '900',
-              letterSpacing: '1px',
+              letterSpacing: '1.5px',
               margin: '0 0 1rem 0',
               textTransform: 'uppercase',
-              textShadow: '0 0 30px rgba(239, 68, 68, 0.5)'
+              textShadow: '0 0 35px rgba(239, 68, 68, 0.8), 0 2px 10px rgba(0, 0, 0, 0.95)'
             }}
           >
             Screen Capture Restricted
           </h1>
 
           <p
+            className="dlp-paragraph"
             style={{
-              maxWidth: '640px',
-              color: '#94a3b8',
-              fontSize: '1.05rem',
-              lineHeight: '1.6',
-              margin: '0 0 1.75rem 0'
+              maxWidth: '700px',
+              color: '#f1f5f9',
+              fontSize: '1.12rem',
+              fontWeight: '500',
+              lineHeight: '1.7',
+              margin: '0 0 1.85rem 0'
             }}
           >
             Capturing screenshots, screen recordings, or printing sensitive assets is strictly prohibited by Zero Trust enterprise policy.
@@ -275,61 +279,100 @@ export default function DLPProtection({ user, token }) {
             style={{
               display: 'flex',
               flexWrap: 'wrap',
-              gap: '12px',
+              gap: '14px',
               justifyContent: 'center',
-              marginBottom: '1.5rem'
+              marginBottom: '1.75rem'
             }}
           >
             <div
+              className="dlp-badge-intercepted"
               style={{
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                padding: '0.55rem 1.1rem',
+                background: 'rgba(239, 68, 68, 0.22)',
+                border: '1px solid #ef4444',
+                padding: '0.65rem 1.25rem',
                 borderRadius: '8px',
-                color: '#fca5a5',
-                fontSize: '0.86rem',
+                color: '#fecaca',
+                fontSize: '0.92rem',
                 fontFamily: 'monospace',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px'
+                gap: '8px',
+                boxShadow: '0 4px 15px rgba(239, 68, 68, 0.2)'
               }}
             >
-              <span>🚨 Intercepted:</span>
-              <strong style={{ color: '#ffffff' }}>{blockReason}</strong>
+              <span style={{ color: '#fca5a5', fontWeight: '700' }}>🚨 Intercepted:</span>
+              <strong style={{ color: '#ffffff', fontWeight: '800' }}>{blockReason}</strong>
             </div>
 
             <div
+              className="dlp-badge-policy"
               style={{
-                background: 'rgba(0, 245, 255, 0.08)',
-                border: '1px solid rgba(0, 245, 255, 0.25)',
-                padding: '0.55rem 1.1rem',
+                background: 'rgba(0, 245, 255, 0.16)',
+                border: '1px solid #00f5ff',
+                padding: '0.65rem 1.25rem',
                 borderRadius: '8px',
-                color: '#38bdf8',
-                fontSize: '0.86rem',
-                fontFamily: 'monospace'
+                color: '#7dd3fc',
+                fontSize: '0.92rem',
+                fontFamily: 'monospace',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 15px rgba(0, 245, 255, 0.15)'
               }}
             >
-              Policy: <strong>POL-004 (Anti-Capture DLP)</strong>
+              <span style={{ color: '#7dd3fc', fontWeight: '700' }}>Policy:</span>
+              <strong style={{ color: '#00f5ff', fontWeight: '800' }}>POL-004 (Anti-Capture DLP)</strong>
             </div>
 
             <div
+              className="dlp-badge-soc"
               style={{
-                background: 'rgba(245, 158, 11, 0.1)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                padding: '0.55rem 1.1rem',
+                background: 'rgba(245, 158, 11, 0.2)',
+                border: '1px solid #f59e0b',
+                padding: '0.65rem 1.25rem',
                 borderRadius: '8px',
-                color: '#fbbf24',
-                fontSize: '0.86rem',
-                fontFamily: 'monospace'
+                color: '#fcd34d',
+                fontSize: '0.92rem',
+                fontFamily: 'monospace',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 15px rgba(245, 158, 11, 0.15)'
               }}
             >
-              SOC Telemetry: <strong>Dispatched (+25 Risk Contrib)</strong>
+              <span style={{ color: '#fcd34d', fontWeight: '700' }}>SOC Telemetry:</span>
+              <strong style={{ color: '#fef08a', fontWeight: '800' }}>Dispatched (+25 Risk Contrib)</strong>
             </div>
           </div>
 
-          <div style={{ color: '#64748b', fontSize: '0.82rem' }}>
+          <div
+            className="dlp-footer"
+            style={{ color: '#cbd5e1', fontSize: '0.88rem', fontWeight: '500', marginBottom: '1.25rem' }}
+          >
             Screen will restore automatically in a few seconds once capture window terminates.
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsBlocked(false)}
+            style={{
+              background: '#ef4444',
+              color: '#ffffff',
+              border: '1px solid #fca5a5',
+              padding: '0.65rem 1.75rem',
+              borderRadius: '8px',
+              fontWeight: '700',
+              fontSize: '0.95rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 20px rgba(239, 68, 68, 0.55)',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            ✓ Return to Workspace
+          </button>
         </div>
       )}
 
