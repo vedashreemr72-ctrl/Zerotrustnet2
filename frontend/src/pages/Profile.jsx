@@ -11,7 +11,7 @@ export default function Profile({ token, user, onBack }) {
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeProfileTab, setActiveProfileTab] = useState('telemetry'); // 'telemetry' or 'identity'
+  const [activeProfileTab, setActiveProfileTab] = useState('identity'); // 'identity' opened first, then 'telemetry'
   
   // Modals state
   const [showPasswordModal, setShowPasswordModal] = useState(false);

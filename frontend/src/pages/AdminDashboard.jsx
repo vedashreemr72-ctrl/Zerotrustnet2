@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X, UserCheck, UserPlus } from 'lucide-react';
+import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X, UserCheck, UserPlus, CameraOff, RefreshCw, BarChart3 } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
 import { formatLocalTime, formatShortTime, formatLocalDateTime } from '../utils/timeFormat';
 import { fetchRealTimeLocation } from '../utils/geolocation';
@@ -494,62 +494,250 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
         </div>
       </div>
 
-      {/* Navigation Sub-Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid rgba(0, 245, 255, 0.1)', paddingBottom: '0.5rem', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button className={`zt-btn ${activeTab === 'overview' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('overview')}>
-            📊 Threat Overview
-          </button>
-          <button className={`zt-btn ${activeTab === 'sessions' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('sessions')}>
-            <Activity size={15} /> Active Sessions ({sessions.filter(s => s.is_active).length})
-          </button>
-          <button 
-            className={`zt-btn ${activeTab === 'employees' ? '' : 'zt-btn-sec'}`} 
-            onClick={() => setActiveTab('employees')}
-            style={regRequests.filter(r => r.approval_status === 'Pending').length > 0 ? { borderColor: '#eab308' } : {}}
-          >
-            <Users size={15} /> Employees & User Management {regRequests.filter(r => r.approval_status === 'Pending').length > 0 && (
-              <span style={{ background: '#eab308', color: '#000', padding: '1px 6px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: 'bold' }}>
-                {regRequests.filter(r => r.approval_status === 'Pending').length} Pending
-              </span>
-            )}
-          </button>
-          <button 
-            className={`zt-btn ${activeTab === 'registrations' ? '' : 'zt-btn-sec'}`} 
-            onClick={() => setActiveTab('registrations')}
-            style={regRequests.filter(r => r.approval_status === 'Pending').length > 0 ? { borderColor: '#eab308', color: '#eab308', fontWeight: 'bold' } : {}}
-          >
-            <UserCheck size={15} /> Registration Requests ({regRequests.filter(r => r.approval_status === 'Pending').length} Pending)
-          </button>
-          <button className={`zt-btn ${activeTab === 'notifications' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('notifications')}>
-            <PhoneCall size={15} /> SMS & Email Dispatches ({notifications.length})
-          </button>
-          <button className={`zt-btn ${activeTab === 'devices' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('devices')}>
-            <Laptop size={15} /> Device Trust Verification
-          </button>
-          <button className={`zt-btn ${activeTab === 'mfa_events' ? '' : 'zt-btn-sec'}`} onClick={() => setActiveTab('mfa_events')}>
-            <Shield size={15} /> Adaptive MFA & Auth Events ({mfaEvents.length})
-          </button>
-          <button 
-            className={`zt-btn ${activeTab === 'appeals' ? '' : 'zt-btn-sec'}`} 
-            onClick={() => setActiveTab('appeals')}
-            style={appeals.filter(a => a.status === 'Pending').length > 0 ? { borderColor: '#eab308', color: '#eab308', fontWeight: 'bold' } : {}}
-          >
-            <FileText size={15} /> Access Appeals ({appeals.filter(a => a.status === 'Pending').length} Pending)
-          </button>
+      {/* ======================================================== */}
+      {/* 🧭 SOC OPERATIONAL COMMAND & NAVIGATION CONSOLE           */}
+      {/* ======================================================== */}
+      <div className="zt-console-container">
+        {/* Header Strip with Cockpit Label & Summary */}
+        <div className="zt-console-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, rgba(0, 245, 255, 0.2), rgba(0, 128, 255, 0.3))',
+              border: '1px solid #00f5ff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#00f5ff',
+              boxShadow: '0 0 12px rgba(0, 245, 255, 0.3)'
+            }}>
+              <Shield size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#f8fafc', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                Zero Trust SOC Operations Console
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                Real-Time Monitoring Viewports & Tactical Governance Controls
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              color: '#34d399',
+              padding: '4px 11px',
+              borderRadius: '20px',
+              fontSize: '0.74rem',
+              fontWeight: '700'
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></span>
+              10 Operations Modules Active
+            </span>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button 
-            className="zt-btn" 
-            style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.4))', fontSize: '0.78rem', color: '#fca5a5', border: '1px solid #ef4444' }} 
+        {/* 10 Customized Command Buttons Grid */}
+        <div className="zt-console-grid">
+          {/* Button 1: 📊 Threat Overview */}
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`zt-console-btn ${activeTab === 'overview' ? 'active' : ''}`}
+          >
+            <div className="zt-console-btn-title">
+              <span style={{ fontSize: '1rem' }}>📊</span>
+              <span>Threat Overview</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: activeTab === 'overview' ? 'rgba(0, 245, 255, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+              color: activeTab === 'overview' ? '#00f5ff' : '#94a3b8',
+              border: activeTab === 'overview' ? '1px solid #00f5ff' : '1px solid rgba(255, 255, 255, 0.12)'
+            }}>
+              LIVE
+            </span>
+          </button>
+
+          {/* Button 2: Active Sessions (7) */}
+          <button
+            onClick={() => setActiveTab('sessions')}
+            className={`zt-console-btn ${activeTab === 'sessions' ? 'active' : ''}`}
+          >
+            <div className="zt-console-btn-title">
+              <Activity size={16} color={activeTab === 'sessions' ? '#00f5ff' : '#38bdf8'} />
+              <span>Active Sessions</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: 'rgba(16, 185, 129, 0.18)',
+              color: '#34d399',
+              border: '1px solid rgba(16, 185, 129, 0.35)'
+            }}>
+              ({sessions.filter(s => s.is_active).length})
+            </span>
+          </button>
+
+          {/* Button 3: Employees & User Management */}
+          <button
+            onClick={() => setActiveTab('employees')}
+            className={`zt-console-btn ${activeTab === 'employees' ? 'active' : ''}`}
+          >
+            <div className="zt-console-btn-title">
+              <Users size={16} color={activeTab === 'employees' ? '#00f5ff' : '#60a5fa'} />
+              <span>Employees & User Management</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: 'rgba(59, 130, 246, 0.18)',
+              color: '#93c5fd',
+              border: '1px solid rgba(59, 130, 246, 0.35)'
+            }}>
+              ({employees.length})
+            </span>
+          </button>
+
+          {/* Button 4: Registration Requests (0 Pending) */}
+          {(() => {
+            const pendingReg = regRequests.filter(r => r.approval_status === 'Pending').length;
+            return (
+              <button
+                onClick={() => setActiveTab('registrations')}
+                className={`zt-console-btn ${activeTab === 'registrations' ? 'active' : ''}`}
+                style={pendingReg > 0 && activeTab !== 'registrations' ? { borderColor: '#eab308', background: 'rgba(234, 179, 8, 0.1)' } : {}}
+              >
+                <div className="zt-console-btn-title">
+                  <UserCheck size={16} color={pendingReg > 0 ? '#eab308' : (activeTab === 'registrations' ? '#00f5ff' : '#94a3b8')} />
+                  <span>Registration Requests</span>
+                </div>
+                <span className="zt-console-badge" style={{
+                  background: pendingReg > 0 ? 'rgba(234, 179, 8, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                  color: pendingReg > 0 ? '#fde047' : '#94a3b8',
+                  border: pendingReg > 0 ? '1px solid rgba(234, 179, 8, 0.5)' : '1px solid rgba(255, 255, 255, 0.12)'
+                }}>
+                  ({pendingReg} Pending)
+                </span>
+              </button>
+            );
+          })()}
+
+          {/* Button 5: SMS & Email Dispatches (35) */}
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`zt-console-btn ${activeTab === 'notifications' ? 'active' : ''}`}
+          >
+            <div className="zt-console-btn-title">
+              <PhoneCall size={16} color={activeTab === 'notifications' ? '#00f5ff' : '#38bdf8'} />
+              <span>SMS & Email Dispatches</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: 'rgba(56, 189, 248, 0.18)',
+              color: '#7dd3fc',
+              border: '1px solid rgba(56, 189, 248, 0.35)'
+            }}>
+              ({notifications.length})
+            </span>
+          </button>
+
+          {/* Button 6: Device Trust Verification */}
+          <button
+            onClick={() => setActiveTab('devices')}
+            className={`zt-console-btn ${activeTab === 'devices' ? 'active' : ''}`}
+          >
+            <div className="zt-console-btn-title">
+              <Laptop size={16} color={activeTab === 'devices' ? '#00f5ff' : '#34d399'} />
+              <span>Device Trust Verification</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: 'rgba(16, 185, 129, 0.18)',
+              color: '#6ee7b7',
+              border: '1px solid rgba(16, 185, 129, 0.35)'
+            }}>
+              ({trustedDevices.length})
+            </span>
+          </button>
+
+          {/* Button 7: Adaptive MFA & Auth Events (40) */}
+          <button
+            onClick={() => setActiveTab('mfa_events')}
+            className={`zt-console-btn ${activeTab === 'mfa_events' ? 'active' : ''}`}
+          >
+            <div className="zt-console-btn-title">
+              <Shield size={16} color={activeTab === 'mfa_events' ? '#00f5ff' : '#a78bfa'} />
+              <span>Adaptive MFA & Auth Events</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: 'rgba(168, 85, 247, 0.18)',
+              color: '#d8b4fe',
+              border: '1px solid rgba(168, 85, 247, 0.35)'
+            }}>
+              ({mfaEvents.length})
+            </span>
+          </button>
+
+          {/* Button 8: Access Appeals (0 Pending) */}
+          {(() => {
+            const pendingAppeals = appeals.filter(a => a.status === 'Pending').length;
+            return (
+              <button
+                onClick={() => setActiveTab('appeals')}
+                className={`zt-console-btn ${activeTab === 'appeals' ? 'active' : ''}`}
+                style={pendingAppeals > 0 && activeTab !== 'appeals' ? { borderColor: '#eab308', background: 'rgba(234, 179, 8, 0.1)' } : {}}
+              >
+                <div className="zt-console-btn-title">
+                  <FileText size={16} color={pendingAppeals > 0 ? '#eab308' : (activeTab === 'appeals' ? '#00f5ff' : '#94a3b8')} />
+                  <span>Access Appeals</span>
+                </div>
+                <span className="zt-console-badge" style={{
+                  background: pendingAppeals > 0 ? 'rgba(234, 179, 8, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                  color: pendingAppeals > 0 ? '#fde047' : '#94a3b8',
+                  border: pendingAppeals > 0 ? '1px solid rgba(234, 179, 8, 0.5)' : '1px solid rgba(255, 255, 255, 0.12)'
+                }}>
+                  ({pendingAppeals} Pending)
+                </span>
+              </button>
+            );
+          })()}
+
+          {/* Button 9: 📸 Test Screenshot DLP */}
+          <button
             onClick={handleSimulateScreenshotDLP}
             title="Instant presentation demo: Triggers DLP screen blinding shield, clipboard wipe, and critical P1 screen capture breach alert"
+            className="zt-console-btn zt-console-btn-screenshot"
           >
-            📸 Test Screenshot DLP
+            <div className="zt-console-btn-title">
+              <span style={{ fontSize: '1rem' }}>📸</span>
+              <span>Test Screenshot DLP</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: 'rgba(239, 68, 68, 0.25)',
+              color: '#fecaca',
+              border: '1px solid rgba(239, 68, 68, 0.45)'
+            }}>
+              DLP TEST
+            </span>
           </button>
-          <button className="zt-btn" style={{ background: '#ef4444', fontSize: '0.78rem' }} onClick={handleResetSystem}>
-            🔄 Reset Live Data Baseline
+
+          {/* Button 10: 🔄 Reset Live Data Baseline */}
+          <button
+            onClick={handleResetSystem}
+            title="Reset live security metrics and telemetry to baseline"
+            className="zt-console-btn zt-console-btn-reset"
+          >
+            <div className="zt-console-btn-title">
+              <span style={{ fontSize: '1rem' }}>🔄</span>
+              <span>Reset Live Data Baseline</span>
+            </div>
+            <span className="zt-console-badge" style={{
+              background: 'rgba(0, 0, 0, 0.35)',
+              color: '#ffffff',
+              border: '1px solid rgba(255, 255, 255, 0.25)'
+            }}>
+              RESET
+            </span>
           </button>
         </div>
       </div>
