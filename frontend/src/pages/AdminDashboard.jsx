@@ -27,6 +27,87 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
   const [stepUpLoading, setStepUpLoading] = useState(false);
   const [stepUpError, setStepUpError] = useState('');
 
+  const formatFullLocation = (loc) => {
+    if (!loc || typeof loc !== 'string') return 'Corporate Headquarters (Bengaluru Campus, Karnataka, India)';
+    const trimmed = loc.trim();
+    if (!trimmed || trimmed === '-' || trimmed === 'N/A' || trimmed === 'None') {
+      return 'Corporate Headquarters (Bengaluru Campus, Karnataka, India)';
+    }
+
+    const lower = trimmed.toLowerCase();
+
+    // Office / Workstation / Corporate shortcuts
+    if (lower === 'office' || lower === 'office workstation' || lower === 'workstation' || lower === 'corporate' || lower === 'local' || lower === 'hq') {
+      return 'Corporate Headquarters (Bengaluru Campus, Karnataka, India)';
+    }
+
+    // Check if coordinates format e.g. "12.8289, 77.5902"
+    const coordMatch = trimmed.match(/^[-+]?([0-9]*\.[0-9]+|[0-9]+)\s*,\s*[-+]?([0-9]*\.[0-9]+|[0-9]+)$/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lon = parseFloat(coordMatch[2]);
+      if (lat >= 12.7 && lat <= 13.3 && lon >= 77.3 && lon <= 77.9) {
+        return 'Electronic City Phase 1, Bengaluru Urban, Karnataka, India';
+      }
+      return `Regional Coordinates (${lat.toFixed(4)}° N, ${lon.toFixed(4)}° E), Karnataka, India`;
+    }
+
+    // Full names for common Indian cities and regions (no small words)
+    if (lower === 'bengaluru' || lower === 'bangalore' || lower === 'blr') {
+      return 'Bengaluru Corporate Campus, Karnataka, India';
+    }
+    if (lower === 'bengaluru, in' || lower === 'bengaluru, india' || lower === 'bangalore, in') {
+      return 'Bengaluru Corporate Campus, Karnataka, India';
+    }
+    if (lower === 'electronic city' || lower === 'ec' || lower === 'electronic city, blr' || lower === 'electronic city, in') {
+      return 'Electronic City Phase 1, Bengaluru Urban, Karnataka, India';
+    }
+    if (lower.includes('tirumagondahalli')) {
+      return 'Tirumagondahalli, Anekal Taluk, Bengaluru Urban, Karnataka, India';
+    }
+    if (lower === 'pune' || lower === 'pun') {
+      return 'Hinjawadi IT Park Phase 2, Pune, Maharashtra, India';
+    }
+    if (lower === 'mumbai' || lower === 'mum') {
+      return 'Bandra Kurla Complex (BKC), Mumbai, Maharashtra, India';
+    }
+    if (lower === 'delhi' || lower === 'new delhi' || lower === 'del') {
+      return 'Connaught Place, New Delhi, Delhi NCR, India';
+    }
+    if (lower === 'chennai' || lower === 'che' || lower === 'chn') {
+      return 'OMR IT Corridor, Chennai, Tamil Nadu, India';
+    }
+    if (lower === 'hyderabad' || lower === 'hyd') {
+      return 'HITEC City, Hyderabad, Telangana, India';
+    }
+    if (lower === 'kolkata' || lower === 'ccu') {
+      return 'Salt Lake Sector V, Kolkata, West Bengal, India';
+    }
+    if (lower === 'london') {
+      return 'London Corporate Headquarters, Greater London, United Kingdom';
+    }
+    if (lower === 'russia' || lower === 'moscow') {
+      return 'Moscow External IP Network, Russian Federation';
+    }
+    if (lower === 'north korea' || lower === 'pyongyang') {
+      return 'Pyongyang Unauthorized Remote Origin, North Korea';
+    }
+
+    // Expand abbreviations at word ends
+    let formatted = trimmed;
+    formatted = formatted.replace(/,\s*IN$/i, ', India');
+    formatted = formatted.replace(/,\s*KA$/i, ', Karnataka, India');
+    formatted = formatted.replace(/,\s*MH$/i, ', Maharashtra, India');
+    formatted = formatted.replace(/,\s*DL$/i, ', Delhi, India');
+    formatted = formatted.replace(/,\s*TN$/i, ', Tamil Nadu, India');
+    formatted = formatted.replace(/,\s*TS$/i, ', Telangana, India');
+    formatted = formatted.replace(/,\s*UK$/i, ', United Kingdom');
+    formatted = formatted.replace(/,\s*US$/i, ', United States');
+    formatted = formatted.replace(/,\s*USA$/i, ', United States');
+
+    return formatted;
+  };
+
   const parseJsonSafe = async (res, defaultVal = null) => {
     if (!res) return defaultVal;
     try {
@@ -664,9 +745,18 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
                         <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{sess.os || 'Windows 11'}</div>
                       </td>
                       <td style={{ fontSize: '0.78rem', color: '#e2e8f0' }}>{sess.browser || 'Google Chrome 127'}</td>
-                      <td>
-                        <div style={{ fontSize: '0.78rem', color: '#e2e8f0' }}>{sess.location || 'Bengaluru, IN'}</div>
-                        <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#f472b6' }}>{sess.ip_addr}</div>
+                      <td style={{ minWidth: '290px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                          <MapPin size={18} color="#00f5ff" style={{ flexShrink: 0, marginTop: '2px' }} />
+                          <div>
+                            <div style={{ fontSize: '1rem', fontWeight: '700', color: '#f8fafc', lineHeight: '1.4' }}>
+                              {formatFullLocation(sess.location)}
+                            </div>
+                            <div style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: '#f472b6', marginTop: '3px' }}>
+                              IP: {sess.ip_addr}
+                            </div>
+                          </div>
+                        </div>
                       </td>
                       <td style={{ fontSize: '0.75rem', color: '#fbbf24' }}>{formatLocalDateTime(sess.login_time)}</td>
                       <td>
@@ -763,7 +853,12 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
                         <td style={{ fontFamily: 'monospace', color: '#00f5ff' }}>@{req.username}</td>
                         <td>{req.department} · {req.emp_type}</td>
                         <td style={{ color: '#94a3b8' }}>{req.device}</td>
-                        <td style={{ color: '#38bdf8' }}>{req.location}</td>
+                        <td style={{ color: '#38bdf8', minWidth: '290px', fontSize: '1rem', fontWeight: '700', lineHeight: '1.4' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                            <MapPin size={16} color="#00f5ff" style={{ flexShrink: 0, marginTop: '2px' }} />
+                            <span>{formatFullLocation(req.location)}</span>
+                          </div>
+                        </td>
                         <td style={{ color: '#fbbf24', fontSize: '0.72rem' }}>{formatLocalDateTime(req.created_at)}</td>
                         <td>
                           <div style={{ display: 'flex', gap: '6px' }}>
@@ -815,11 +910,11 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
                 <tbody>
                   {employees.map((emp, idx) => {
                     const isLocked = emp.is_active === 0;
-                    const curLoc = emp.current_login_location || 'Office Workstation';
-                    const baseLoc = emp.baseline_location || 'Bengaluru';
-                    const isMismatch = curLoc && baseLoc && 
-                      !curLoc.toLowerCase().includes(baseLoc.toLowerCase()) && 
-                      !baseLoc.toLowerCase().includes(curLoc.toLowerCase());
+                    const fullCurLoc = formatFullLocation(emp.current_login_location);
+                    const fullBaseLoc = formatFullLocation(emp.baseline_location);
+                    const isMismatch = fullCurLoc && fullBaseLoc && 
+                      !fullCurLoc.toLowerCase().includes(fullBaseLoc.toLowerCase().split(',')[0].trim()) && 
+                      !fullBaseLoc.toLowerCase().includes(fullCurLoc.toLowerCase().split(',')[0].trim());
                     const isImpossible = emp.impossible_travel_flag === 1;
 
                     return (
@@ -828,27 +923,35 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
                         <td style={{ fontFamily: 'monospace', color: '#00f5ff' }}>{emp.username}</td>
                         <td>{emp.department}</td>
                         <td>{emp.emp_type}</td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <MapPin size={13} color="#00f5ff" style={{ flexShrink: 0 }} />
-                            <span style={{ fontWeight: '600', color: isMismatch ? '#f59e0b' : '#38bdf8', fontSize: '0.8rem' }}>
-                              {curLoc}
-                            </span>
+                        <td style={{ minWidth: '340px' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <MapPin size={18} color="#00f5ff" style={{ flexShrink: 0, marginTop: '2px' }} />
+                            <div style={{ width: '100%' }}>
+                              <div style={{ 
+                                fontWeight: '700', 
+                                color: isMismatch ? '#fbbf24' : '#38bdf8', 
+                                fontSize: '1.02rem',
+                                lineHeight: '1.45',
+                                letterSpacing: '0.01em'
+                              }}>
+                                {fullCurLoc}
+                              </div>
+                              <div style={{ fontSize: '0.88rem', color: '#94a3b8', marginTop: '5px', lineHeight: '1.4' }}>
+                                Baseline Location: <strong style={{ color: '#f8fafc', fontWeight: '600' }}>{fullBaseLoc}</strong>
+                              </div>
+                            </div>
                           </div>
-                          <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px' }}>
-                            Baseline: <strong style={{ color: '#cbd5e1' }}>{baseLoc}</strong>
-                          </div>
-                          <div style={{ marginTop: '3px' }}>
+                          <div style={{ marginTop: '7px', paddingLeft: '26px' }}>
                             {isImpossible ? (
-                              <span className="zt-badge bc" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                              <span className="zt-badge bc" style={{ fontSize: '0.8rem', padding: '3px 9px', fontWeight: 'bold' }}>
                                 🚨 Impossible Travel
                               </span>
                             ) : isMismatch ? (
-                              <span className="zt-badge bm" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                              <span className="zt-badge bm" style={{ fontSize: '0.8rem', padding: '3px 9px', fontWeight: 'bold' }}>
                                 ⚠️ Geo Deviation
                               </span>
                             ) : (
-                              <span className="zt-badge bl" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
+                              <span className="zt-badge bl" style={{ fontSize: '0.8rem', padding: '3px 9px', fontWeight: 'bold' }}>
                                 ✓ Baseline Match
                               </span>
                             )}
@@ -1018,7 +1121,12 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
                       </td>
                       <td style={{ color: '#8aafc8', fontSize: '0.8rem' }}>{dev.disk_encryption}</td>
                       <td style={{ color: '#8aafc8', fontSize: '0.8rem' }}>{dev.firewall_status}</td>
-                      <td style={{ fontFamily: 'monospace', color: '#00f5ff' }}>{dev.last_seen_location}</td>
+                      <td style={{ minWidth: '290px', color: '#00f5ff', fontSize: '1rem', fontWeight: '700', lineHeight: '1.4' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                          <MapPin size={16} color="#00f5ff" style={{ flexShrink: 0, marginTop: '2px' }} />
+                          <span>{formatFullLocation(dev.last_seen_location)}</span>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1362,7 +1470,12 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
                         <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{req.emp_type}</div>
                       </td>
                       <td style={{ color: '#94a3b8' }}>{req.device}</td>
-                      <td style={{ color: '#38bdf8' }}>{req.location}</td>
+                      <td style={{ color: '#38bdf8', minWidth: '290px', fontSize: '1rem', fontWeight: '700', lineHeight: '1.4' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                          <MapPin size={16} color="#00f5ff" style={{ flexShrink: 0, marginTop: '2px' }} />
+                          <span>{formatFullLocation(req.location)}</span>
+                        </div>
+                      </td>
                       <td style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{formatLocalDateTime(req.created_at)}</td>
                       <td>
                         <span style={{
@@ -1603,7 +1716,7 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
         }}>
           <div className="zt-card" style={{
             width: '100%',
-            maxWidth: '620px',
+            maxWidth: '720px',
             border: '1px solid #00f5ff',
             boxShadow: '0 0 30px rgba(0, 245, 255, 0.25)',
             position: 'relative',
@@ -1625,32 +1738,32 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', marginBottom: '1.2rem' }}>
-              <div style={{ background: 'rgba(0, 245, 255, 0.04)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(0, 245, 255, 0.15)' }}>
-                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Current Active Location</div>
-                <div style={{ color: '#00f5ff', fontWeight: 'bold', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <MapPin size={14} />
-                  <span>{selectedEmployeeLoc.current_login_location || 'Office Workstation'}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.2rem' }}>
+              <div style={{ background: 'rgba(0, 245, 255, 0.05)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(0, 245, 255, 0.25)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.82rem', textTransform: 'uppercase', marginBottom: '6px', fontWeight: '700', letterSpacing: '0.03em' }}>Current Active Location</div>
+                <div style={{ color: '#00f5ff', fontWeight: 'bold', fontSize: '1.05rem', display: 'flex', alignItems: 'flex-start', gap: '8px', lineHeight: '1.45' }}>
+                  <MapPin size={20} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <span>{formatFullLocation(selectedEmployeeLoc.current_login_location)}</span>
                 </div>
               </div>
 
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Registered Baseline Location</div>
-                <div style={{ color: '#cbd5e1', fontWeight: 'bold', fontSize: '0.88rem' }}>
-                  {selectedEmployeeLoc.baseline_location || 'Bengaluru'}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.82rem', textTransform: 'uppercase', marginBottom: '6px', fontWeight: '700', letterSpacing: '0.03em' }}>Registered Baseline Location</div>
+                <div style={{ color: '#f8fafc', fontWeight: 'bold', fontSize: '1.05rem', lineHeight: '1.45' }}>
+                  {formatFullLocation(selectedEmployeeLoc.baseline_location)}
                 </div>
               </div>
 
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Previous Known Location</div>
-                <div style={{ color: '#cbd5e1', fontWeight: 'bold', fontSize: '0.88rem' }}>
-                  {selectedEmployeeLoc.last_login_location || 'Office'}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.82rem', textTransform: 'uppercase', marginBottom: '6px', fontWeight: '700', letterSpacing: '0.03em' }}>Previous Known Location</div>
+                <div style={{ color: '#cbd5e1', fontWeight: 'bold', fontSize: '1.05rem', lineHeight: '1.45' }}>
+                  {formatFullLocation(selectedEmployeeLoc.last_login_location)}
                 </div>
               </div>
 
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '0.8rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <div style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', marginBottom: '4px' }}>Registered Hardware Endpoint</div>
-                <div style={{ color: '#a7f3d0', fontFamily: 'monospace', fontSize: '0.82rem' }}>
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.82rem', textTransform: 'uppercase', marginBottom: '6px', fontWeight: '700', letterSpacing: '0.03em' }}>Registered Hardware Endpoint</div>
+                <div style={{ color: '#a7f3d0', fontFamily: 'monospace', fontSize: '0.95rem', marginTop: '2px' }}>
                   {selectedEmployeeLoc.baseline_device || 'Corporate Laptop'}
                 </div>
               </div>

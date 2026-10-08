@@ -252,7 +252,7 @@ def init_db():
         channel      TEXT NOT NULL,
         recipient    TEXT NOT NULL,
         subject      TEXT,
-        message      TEXT NOT NULL,
+        message      TEXT NOT NULL,                     
         severity     TEXT DEFAULT 'High',
         sent_at      TEXT NOT NULL,
         status       TEXT DEFAULT 'Dispatched',
@@ -3013,7 +3013,7 @@ def admin_sim_reset():
         credential_sharing_flag=?,credential_sharing_details='',shadow_it_flag=?,shadow_it_details='',
         ai_risk_flag=?,ai_risk_details='',unusual_collaboration_flag=?,unusual_collaboration_details='',
         privilege_escalation_flag=?,privilege_escalation_details='',mitre_techniques='None',mitre_confidence=0,
-        business_impact_rupees=0,current_login_location='Office' WHERE user_id=?""",
+        business_impact_rupees=0,current_login_location='Corporate Headquarters (Bengaluru Campus, Karnataka, India)' WHERE user_id=?""",
         (bd.get("login_time", 9), bd.get("file_access_count", 15), bd.get("failed_logins", 0), bd.get("device_known", 1),
          bd.get("downloads", 5), bd.get("sensitive_files", 0), bd.get("resignation_flag", 0), bd.get("genai_upload_mb", 0.0),
          bd.get("external_uploads", 0), bd.get("usb_usage", 0), bd.get("email_attachments", 0), bd.get("printing_events", 0),
@@ -3376,7 +3376,7 @@ def admin_registration_requests():
             "created_at": r[9],
             "reviewed_at": r[10],
             "reviewed_by": r[11],
-            "location": r[12] or "Office",
+            "location": r[12] or "Corporate Headquarters (Bengaluru Campus, Karnataka, India)",
             "device": r[13] or "Corporate Laptop"
         })
     return jsonify(result)
@@ -4299,7 +4299,7 @@ def admin_device_trust():
             "trust_status": "Trusted Device" if is_known else "Untrusted / Pending Verification",
             "disk_encryption": "BitLocker AES-256 Enabled" if is_known else "Not Verified",
             "firewall_status": "Active (Enforced)" if is_known else "Warning: External IP",
-            "last_seen_location": r.get('current_login_location', 'Bengaluru'),
+            "last_seen_location": r.get('current_login_location', 'Bengaluru Corporate Campus, Karnataka, India'),
             "risk_score": r.get('risk_score', 0)
         })
     return jsonify(devices)

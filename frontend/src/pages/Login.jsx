@@ -67,7 +67,7 @@ export default function Login({
   useEffect(() => {
     fetchRealTimeLocation().then((loc) => {
       if (loc && (loc.address || loc.shortLocation)) {
-        const resolved = loc.shortLocation || loc.address;
+        const resolved = loc.address || loc.shortLocation;
         setSimLocation(resolved);
         try { localStorage.setItem('ztn_last_location', resolved); } catch {}
       }
@@ -95,11 +95,11 @@ export default function Login({
       if (!effectiveLocation || effectiveLocation === 'Detecting location...') {
         try {
           const loc = await fetchRealTimeLocation();
-          effectiveLocation = loc.shortLocation || loc.address || 'Local Workstation';
+          effectiveLocation = loc.address || loc.shortLocation || 'Bengaluru, Karnataka, India';
           setSimLocation(effectiveLocation);
           try { localStorage.setItem('ztn_last_location', effectiveLocation); } catch {}
         } catch {
-          effectiveLocation = 'Local Workstation';
+          effectiveLocation = 'Bengaluru, Karnataka, India';
         }
       }
 
@@ -149,7 +149,7 @@ export default function Login({
     try {
       const effectiveLoc = (simLocation && simLocation !== 'Detecting location...') 
         ? simLocation 
-        : (localStorage.getItem('ztn_last_location') || 'Local Workstation');
+        : (localStorage.getItem('ztn_last_location') || 'Bengaluru, Karnataka, India');
 
       const response = await fetch('/api/auth/register', {
         method: 'POST',
