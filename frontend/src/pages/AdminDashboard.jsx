@@ -308,6 +308,28 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
     }
   };
 
+  const handleSimulateScreenshotDLP = async () => {
+    setActionMsg('');
+    try {
+      if (window.triggerDLPScreenshotBlock) {
+        window.triggerDLPScreenshotBlock('Admin SOC Anti-Screenshot DLP Test');
+      }
+      const res = await fetch('/api/admin/dlp/test-screenshot', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        }
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Test alert failed');
+      setActionMsg(`📸 ${resData.message}`);
+      fetchSOCData(true);
+    } catch (err) {
+      setActionMsg(`❌ ${err.message}`);
+    }
+  };
+
   const handleAppealAction = async (appealId, action, notes = '') => {
     try {
       const res = await fetch(`/api/admin/appeals/${appealId}/action`, {
@@ -540,7 +562,15 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button 
+            className="zt-btn" 
+            style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.4))', fontSize: '0.78rem', color: '#fca5a5', border: '1px solid #ef4444' }} 
+            onClick={handleSimulateScreenshotDLP}
+            title="Instant presentation demo: Triggers DLP screen blinding shield, clipboard wipe, and critical P1 screen capture breach alert"
+          >
+            📸 Test Screenshot DLP
+          </button>
           <button 
             className="zt-btn" 
             style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.78rem', color: '#fff', border: '1px solid #f59e0b' }} 

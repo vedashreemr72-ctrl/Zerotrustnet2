@@ -445,6 +445,7 @@ DEFAULT_POLICIES = [
     {"name":"Unapproved USB Storage Connected","conditions":'{"usb_usage":1}',"action":"Revoke Removable Storage + Quarantine Session","description":"Block endpoint removable media and alert SOC when unapproved USB flash storage devices are connected."},
     {"name":"Unauthorized Folder Scope Access","conditions":'{"unauthorized_folder_access":true}',"action":"Block Resource Access + Alert SOC","description":"Restrict access when an employee attempts to access directories outside their permitted departmental scope."},
     {"name":"Unknown Device + Sensitive Resource + Off-Hours","conditions":'{"device_known":0,"sensitive_access":true,"off_hours":true}',"action":"Require Step-Up Authentication","description":"Trigger MFA if an unknown device accesses sensitive resources outside business hours (08:00–19:00)."},
+    {"name":"DLP Anti-Screen Capture Protection","conditions":'{"screenshot_attempt":true}',"action":"Obscure Screen + Sanitize Clipboard + Alert SOC","description":"Data Loss Prevention (DLP) policy prevents taking screenshots, screen recordings, or prints of confidential enterprise records."},
 ]
 
 def _log_event(conn, user_id, username, user_name, department, event_type, event_details, ip, device, risk_contrib, is_suspicious, ts_str=None, session_id=None):
@@ -1685,8 +1686,26 @@ def employee_action():
         details = custom_details or "Unauthorized screen capture attempt intercepted and blocked (PrintScreen / Snipping Tool)"
         b_data["failed_logins"] = b_data.get("failed_logins", 0) + 1
         is_susp = 1
-        risk_contrib = 20
+        risk_contrib = 25
         warning = "SECURITY VIOLATION: Screen capture prohibited by Zero Trust Data Loss Prevention (DLP) policy."
+
+        # Immediately create high-priority notification for Admin SOC Dashboard
+        nid = str(uuid.uuid4())
+        ts = datetime.now(timezone.utc).isoformat()
+        notif_subject = f"🚨 SCREENSHOT ATTEMPT BLOCKED: {name} ({dept})"
+        notif_msg = f"CRITICAL: Employee {name} (@{uname}, Dept: {dept}) attempted unauthorized screen capture [{details}]. Endpoint DLP active; screen blinded and clipboard sanitized."
+        conn.execute("""
+            INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+            VALUES (?,?,?,?,?,?,?,?,?,?,0)
+        """, (nid, uid, uname, "Endpoint DLP Alert", "SOC Admin Team", notif_subject, notif_msg, "Critical", ts, "Dispatched"))
+
+        # Immediately create high-priority alert in alerts table
+        alt_id = str(uuid.uuid4())
+        alt_code = f"ALT-{int(datetime.now().timestamp()) % 100000}"
+        conn.execute("""
+            INSERT INTO alerts (id, alert_code, user_id, user_name, department, priority, alert_title, severity, risk_score, created_at, status)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (alt_id, alt_code, uid, name, dept, "P1", f"Unauthorized Screen Capture Blocked: {details}", "Critical", 85, ts, "Active"))
 
     # Save behavior updates back to DB
     c.execute("""
@@ -4503,6 +4522,48 @@ def dispatch_usb_insertion_alert(device_name, drive_letter="USB", user_override=
     except Exception:
         pass
     print(f"[USB DETECTED] {device_name} [{drive_letter}] associated with {emp_name} (@{uname})", flush=True)
+
+@app.route('/api/admin/dlp/test-screenshot', methods=['POST'])
+def admin_dlp_test_screenshot():
+    """Manual or presentation trigger endpoint for testing DLP screenshot interception alerts instantly."""
+    data = request.json or {}
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id, username, name, department FROM users WHERE role='employee' LIMIT 1")
+    user_row = c.fetchone()
+    if not user_row:
+        user_row = (str(uuid.uuid4()), "veda", "Veda", "Engineering")
+    uid, uname, name, dept = user_row
+
+    now_ts = datetime.now(timezone.utc).isoformat()
+    nid = str(uuid.uuid4())
+    subj = f"🚨 SCREENSHOT ATTEMPT INTERCEPTED: {name} ({dept})"
+    msg = f"CRITICAL: Employee {name} (@{uname}, Dept: {dept}) attempted unauthorized screen capture (PrintScreen / Snipping Tool). Endpoint DLP active; screen blinded and clipboard sanitized."
+    c.execute("""
+        INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+        VALUES (?,?,?,?,?,?,?,?,?,?,0)
+    """, (nid, uid, uname, "Endpoint DLP Alert", "SOC Admin Team", subj, msg, "Critical", now_ts, "Dispatched"))
+
+    alt_id = str(uuid.uuid4())
+    alt_code = f"ALT-{int(datetime.now().timestamp()) % 100000}"
+    c.execute("""
+        INSERT INTO alerts (id, alert_code, user_id, user_name, department, priority, alert_title, severity, risk_score, created_at, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (alt_id, alt_code, uid, name, dept, "P1", "Unauthorized Screen Capture Blocked: PrintScreen / Snipping Tool shortcut intercepted by Zero Trust DLP Guard", "Critical", 85, now_ts, "Active"))
+
+    conn.commit()
+    conn.close()
+
+    log_audit(uid, uname, name, dept, "Security Violation", "Unauthorized screen capture attempt intercepted and blocked (PrintScreen / Snipping Tool)", "127.0.0.1", "Corporate Secured Laptop", 25, 1)
+
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    return jsonify({
+        "success": True,
+        "message": f"DLP Screen Capture Block alert successfully dispatched to SOC Dashboard for {name} ({dept})."
+    })
 
 @app.route('/api/admin/usb/test-trigger', methods=['POST'])
 def admin_usb_test_trigger():

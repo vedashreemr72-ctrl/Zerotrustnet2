@@ -5,7 +5,7 @@ import {
   FileCheck, Eye, AlertCircle, Layers, MapPin, Navigation,
   Briefcase, CheckSquare, Square, Plus, Trash2, BookOpen, GitBranch, Terminal, 
   Sparkles, Folder, File, Send, Save, Check, Users, Calendar, 
-  Play, Copy, RefreshCw, X, Search, Filter, ShieldCheck, CheckCircle
+  Play, Copy, RefreshCw, X, Search, Filter, ShieldCheck, CheckCircle, CameraOff
 } from 'lucide-react';
 import { fetchRealTimeLocation } from '../utils/geolocation';
 import { formatLocalTime, formatShortTime, formatLocalDateTime, getRelativeRealTime } from '../utils/timeFormat';
@@ -703,6 +703,19 @@ Security Context: Continuous Verification Active (15-file daily quota enforced -
     fetchDashboardData();
   }, [token]);
 
+  useEffect(() => {
+    const handleScreenshotBlocked = (e) => {
+      const reason = e.detail?.reason || 'Screen capture attempted';
+      setActionAlert({
+        type: 'warning',
+        msg: `🛑 Zero Trust DLP Alert: ${reason}. Screen blinded and attempt logged to SOC audit trail.`
+      });
+      fetchDashboardData();
+    };
+    window.addEventListener('ztn_screenshot_blocked', handleScreenshotBlocked);
+    return () => window.removeEventListener('ztn_screenshot_blocked', handleScreenshotBlocked);
+  }, [token]);
+
   const handleQuickAction = async (actionType, extraData = {}) => {
     setActionLoading(true);
     setActionAlert({ type: '', msg: '' });
@@ -1225,7 +1238,47 @@ Security Context: Continuous Verification Active (15-file daily quota enforced -
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div
+                style={{
+                  padding: '0.42rem 0.85rem',
+                  borderRadius: '6px',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid #10b981',
+                  color: '#10b981',
+                  fontSize: '0.78rem',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                title="Continuous Zero Trust DLP: Screen capture, Snipping Tool, and print operations are blocked"
+              >
+                <ShieldCheck size={14} /> DLP Screen Guard: Active
+              </div>
+
+              <button
+                className="zt-btn"
+                style={{
+                  padding: '0.45rem 0.85rem',
+                  fontSize: '0.78rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.35))',
+                  borderColor: '#ef4444',
+                  color: '#fca5a5'
+                }}
+                onClick={() => {
+                  if (window.triggerDLPScreenshotBlock) {
+                    window.triggerDLPScreenshotBlock('Manual Screenshot Simulation');
+                  }
+                }}
+                title="Simulate a screen capture attempt to test the DLP blinding shield and SOC alert"
+              >
+                <CameraOff size={14} /> Test Screenshot Block
+              </button>
+
               <button
                 className="zt-btn"
                 style={{ padding: '0.45rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}

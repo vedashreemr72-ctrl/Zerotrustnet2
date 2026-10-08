@@ -14,6 +14,7 @@ import Profile from './pages/Profile';
 import NotificationCenter from './components/NotificationCenter';
 import GlobalHeader from './components/GlobalHeader';
 import SecurityTelemetry from './components/SecurityTelemetry';
+import DLPProtection from './components/DLPProtection';
 import { formatLocalDateTime, formatShortTime } from './utils/timeFormat';
 
 import { 
@@ -242,13 +243,16 @@ export default function App() {
 
   if (!token || !user) {
     return (
-      <Login 
-        onLoginSuccess={handleLoginSuccess} 
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-        siteMode={siteMode}
-        onToggleSiteMode={handleToggleSiteMode}
-      />
+      <>
+        <DLPProtection user={null} token={null} />
+        <Login 
+          onLoginSuccess={handleLoginSuccess} 
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+          siteMode={siteMode}
+          onToggleSiteMode={handleToggleSiteMode}
+        />
+      </>
     );
   }
 
@@ -599,6 +603,8 @@ export default function App() {
 
       {/* Main Content Dispatcher */}
       <div className="zt-main-content">
+        {/* Global Zero Trust DLP Anti-Screenshot Protection */}
+        <DLPProtection user={user} token={token} />
         {/* Global Top Header Bar with Theme & Site Mode Icons on Every Page */}
         <GlobalHeader 
           user={user}

@@ -2704,4 +2704,36 @@ code, pre, kbd, samp {
   border-color: rgba(2, 132, 199, 0.3) !important;
 }
 
+/* ==========================================================================
+   Zero Trust DLP (Data Loss Prevention) Anti-Screenshot & Anti-Capture Rules
+   ========================================================================== */
+
+@media print {
+  html, body, #root, * {
+    display: none !important;
+    visibility: hidden !important;
+    background: #000000 !important;
+    color: transparent !important;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.zt-dlp-shield-active {
+  filter: blur(40px) brightness(0.2) !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: none !important;
+}
+
+
 
