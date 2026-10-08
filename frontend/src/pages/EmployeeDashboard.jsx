@@ -305,7 +305,7 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
 - [ ] Review sprint architectural document
 - [ ] Verify Zero Trust DLP payload policies
 
-Security Context: Continuous Verification Active (10-file daily quota enforced).`;
+Security Context: Continuous Verification Active (15-file daily quota enforced - only 15 files allowed to access).`;
     } catch (e) {
       return '';
     }
@@ -322,7 +322,7 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
     }
   };
 
-  // Workspace Document Vault (Tied to the 10-File Daily Quota)
+  // Workspace Document Vault (Tied to the 15-File Daily Quota)
   const workspaceDocuments = [
     {
       id: 'doc-1',
@@ -350,11 +350,11 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
       lastModified: '2026-10-05',
       author: 'CISO Office',
       type: 'PDF',
-      summary: 'Corporate compliance standard: mandatory multi-factor authentication, device fingerprinting, and max 10 file daily download ceiling.',
+      summary: 'Corporate compliance standard: mandatory multi-factor authentication, device fingerprinting, and max 15 file daily download ceiling.',
       contentPreview: [
         'POLICY DIRECTIVE 2026-SEC-01:',
         '• Principle of Least Privilege: Employees access only resources required for assigned active sprint items.',
-        '• Daily File Quota: Standard employees are limited to 10 file operations per 24 hours. Extensions require formal admin appeal.',
+        '• Daily File Quota: Standard employees are limited to 15 file operations per 24 hours during working hours (only 15 files are allowed to access). Extensions require formal admin appeal.',
         '• Geolocation Verification: Logins from anomalous regions trigger automated step-up challenges.'
       ]
     },
@@ -452,7 +452,7 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
         if (resData.quota_exceeded) {
           setShowAppealModal(true);
           fetchAppeals();
-          setActionAlert({ type: 'error', msg: `⛔ Quota Reached: ${resData.error} (Maximum 10-file access limit). Please appeal for access.` });
+          setActionAlert({ type: 'error', msg: `⛔ Quota Reached: ${resData.error} (Only 15 files are allowed to access). Please appeal for access.` });
           return;
         }
         throw new Error(resData.error || 'File access failed');
@@ -493,7 +493,7 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
     } else if (lower === 'whoami') {
       responseText = `User: ${user.name} (${user.username || user.email}) | Role: ${user.role} | Device: ${user.device_id || 'DEV-WIN-PRO'}`;
     } else if (lower === 'quota') {
-      responseText = `File Quota: ${data?.file_quota?.used || 0}/${data?.file_quota?.limit || 10} files used today.`;
+      responseText = `File Quota: ${data?.file_quota?.used || 0}/${data?.file_quota?.limit || 15} files used today (Only 15 files are allowed to access).`;
     } else if (lower === 'tasks') {
       const pending = workspaceTasks.filter(t => !t.completed).length;
       responseText = `Tasks: ${pending} pending out of ${workspaceTasks.length} total.`;
@@ -721,7 +721,7 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
           setActiveModal(null);
           setShowAppealModal(true);
           fetchAppeals();
-          setActionAlert({ type: 'error', msg: `⛔ ${res.error} (10-file quota exceeded). Please submit an appeal below.` });
+          setActionAlert({ type: 'error', msg: `⛔ ${res.error} (Only 15 files are allowed to access). Please submit an appeal below.` });
           return;
         }
         throw new Error(res.error || 'Action failed');
@@ -905,7 +905,7 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
           setShowFileModal(false);
           setShowAppealModal(true);
           fetchAppeals();
-          setActionAlert({ type: 'error', msg: `⛔ ${resData.error} (Maximum 10-file quota reached). Please appeal below for extension.` });
+          setActionAlert({ type: 'error', msg: `⛔ ${resData.error} (Only 15 files are allowed to access). Please appeal below for extension.` });
           return;
         }
         throw new Error(resData.error || 'File operation failed');
@@ -1221,7 +1221,7 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
                 }}
                 onClick={() => setActiveTab('files')}
               >
-                <Folder size={16} /> 📁 Project Files & Vault ({data?.file_quota ? `${data.file_quota.used}/${data.file_quota.limit}` : '10 Quota'})
+                <Folder size={16} /> 📁 Project Files & Vault ({data?.file_quota ? `${data.file_quota.used}/${data.file_quota.limit}` : '15 Quota'})
               </button>
             </div>
 
@@ -1394,10 +1394,10 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.18rem', color: '#00f5ff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Folder size={20} /> Enterprise File Vault & 10-File Daily Quota
+                <Folder size={20} /> Enterprise File Vault & 15-File Daily Quota
               </h3>
               <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
-                Download sprint resources or upload documents to secure cloud storage. Daily quota ceiling: 10 files.
+                Download sprint resources or upload documents to secure cloud storage. Only 15 files are allowed to access during working hours.
               </p>
             </div>
 
@@ -1411,7 +1411,7 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
                 color: data?.file_quota?.is_exhausted ? '#ef4444' : '#00f5ff',
                 fontWeight: 'bold'
               }}>
-                📁 Quota Used: {data?.file_quota ? `${data.file_quota.used}/${data.file_quota.limit}` : '0/10'} Files
+                📁 Quota Used: {data?.file_quota ? `${data.file_quota.used}/${data.file_quota.limit}` : '0/15'} Files
               </div>
               <button
                 className="zt-btn"
@@ -2332,14 +2332,14 @@ Security Context: Continuous Verification Active (10-file daily quota enforced).
               color: '#fecaca',
               lineHeight: '1.45'
             }}>
-              <strong>🛡️ Zero Trust Least-Privilege Policy:</strong> Each employee account is granted an operational limit of <strong>10 file accesses</strong>. Once you reach 10 file accesses, further file reads, downloads, uploads, and sensitive document access are automatically restricted until an administrative appeal is submitted and approved by the Security Administrator.
+              <strong>🛡️ Zero Trust Least-Privilege Policy:</strong> Each employee account is granted an operational limit of <strong>15 file accesses</strong> during working hours (only 15 files are allowed to access). Once you reach 15 file accesses, further file reads, downloads, uploads, and sensitive document access are automatically restricted until an administrative appeal is submitted and approved by the Security Administrator.
             </div>
 
             {/* Quota Telemetry Status Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
               <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Allowed Limit</div>
-                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#00f5ff' }}>{data?.file_quota?.limit ?? 10}</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#00f5ff' }}>{data?.file_quota?.limit ?? 15}</div>
                 <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Files Baseline</div>
               </div>
               <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>

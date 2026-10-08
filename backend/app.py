@@ -440,7 +440,7 @@ USERS_SEED = [
 BEHAVIOR_SEED = {}
 
 DEFAULT_POLICIES = [
-    {"name":"Working Hours Download Restriction","conditions":'{"downloads_gt":15,"working_hours":true}',"action":"Temporarily Suspend Account","description":"Downloads are restricted to 15 files during working hours (08:00–18:00). Automatically suspend account when download volume exceeds 15 files."},
+    {"name":"Mass Download Detection","conditions":'{"downloads_gt":15,"working_hours":true}',"action":"Temporarily Suspend Account","description":"Downloads are restricted to 15 files in working hours. Automatically suspend account when download volume exceeds 15 files (only 15 files are allowed to access)."},
     {"name":"Privilege Escalation","conditions":'{"privilege_escalation_flag":1}',"action":"Revoke Elevated Privileges + Alert","description":"Immediately revoke elevated privileges and alert the security team when unauthorized privilege escalation is detected."},
     {"name":"Unapproved USB Storage Connected","conditions":'{"usb_usage":1}',"action":"Revoke Removable Storage + Quarantine Session","description":"Block endpoint removable media and alert SOC when unapproved USB flash storage devices are connected."},
     {"name":"Unauthorized Folder Scope Access","conditions":'{"unauthorized_folder_access":true}',"action":"Block Resource Access + Alert SOC","description":"Restrict access when an employee attempts to access directories outside their permitted departmental scope."},
@@ -695,9 +695,9 @@ def ensure_incidents(df):
         if row.get('privilege_escalation_flag'): violations.append("Privilege Escalation")
         hr = int(row.get('login_time', 9))
         if row.get('downloads', 0) > 15 and (8 <= hr <= 18):
-            violations.append("Working Hours Download Restriction")
+            violations.append("Mass Download Detection")
         elif row.get('downloads', 0) > 15:
-            violations.append("Working Hours Download Restriction")
+            violations.append("Mass Download Detection")
         if row.get('genai_upload_mb', 0) > 20: violations.append("GenAI Data Exfiltration")
         if row.get('last_login_days_ago', 0) > 90: violations.append("Dormant Account Reactivation")
         if row.get('credential_sharing_flag'): violations.append("Credential Sharing")
@@ -1339,7 +1339,7 @@ def api_totp_verify():
 def check_user_file_quota(uid):
     """
     Checks if employee has exceeded their file access quota.
-    Default limit: 10 files.
+    Default limit: 15 files during working hours. Only 15 files are allowed to access.
     Approved appeals grant requested_files extra quota.
     Returns: (is_allowed: bool, quota_used: int, quota_limit: int, has_pending: bool)
     """
@@ -1353,7 +1353,7 @@ def check_user_file_quota(uid):
     used_bd = b_row[0] if (b_row and b_row[0] is not None) else 0
     quota_used = max(used_logs, used_bd)
 
-    base_limit = 10
+    base_limit = 15
     c.execute("SELECT COALESCE(SUM(requested_files), 0) FROM file_access_appeals WHERE user_id=? AND status='Approved'", (uid,))
     extra_approved = c.fetchone()[0] or 0
     quota_limit = base_limit + extra_approved
@@ -1503,13 +1503,13 @@ def employee_action():
         return jsonify({"error": "Behavior data profile not found"}), 404
     b_data = dict(zip(cols, b_row))
 
-    # Enforce 10-file quota check on file operations
+    # Enforce 15-file quota check on file operations (only 15 files allowed to access)
     if action_type in ["download_report", "upload_doc", "open_confidential", "delete_file"]:
         is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
         if not is_allowed:
             conn.close()
             return jsonify({
-                "error": f"File access quota reached ({quota_used}/{quota_limit} files used). Please submit an access appeal request to unlock further file access.",
+                "error": f"File access quota reached ({quota_used}/{quota_limit} files accessed). Only 15 files are allowed to be accessed during working hours. Please submit an access appeal request to unlock further file access.",
                 "quota_exceeded": True,
                 "quota_used": quota_used,
                 "quota_limit": quota_limit,
@@ -2655,12 +2655,12 @@ def admin_policies():
         # 2. Privilege Escalation (Insider permission escalation)
         if row.get('privilege_escalation_flag'):
             violations.append({"Policy": "Privilege Escalation", "User": row['name'], "Action": "Revoke Elevated Privileges + Alert"})
-        # 3. Working Hours Download Restriction (Restricted to 15 files in working hours)
+        # 3. Mass Download Detection (Restricted to 15 files in working hours)
         hr = int(row.get('login_time', 9))
         if row.get('downloads', 0) > 15 and (8 <= hr <= 18):
-            violations.append({"Policy": "Working Hours Download Restriction", "User": row['name'], "Action": "Temporarily Suspend Account"})
+            violations.append({"Policy": "Mass Download Detection", "User": row['name'], "Action": "Temporarily Suspend Account"})
         elif row.get('downloads', 0) > 15:
-            violations.append({"Policy": "Working Hours Download Restriction", "User": row['name'], "Action": "Temporarily Suspend Account"})
+            violations.append({"Policy": "Mass Download Detection", "User": row['name'], "Action": "Temporarily Suspend Account"})
         # 4. Unauthorized Scope Access (Employee accessing cross-department data)
         expected = str(row.get('expected_folders', '') or '')
         accessed = str(row.get('accessed_folders', '') or '')
@@ -4059,7 +4059,7 @@ def employee_file_access():
     is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
     if not is_allowed:
         return jsonify({
-            "error": f"File access quota limit reached ({quota_used}/{quota_limit} files accessed). You must submit an access appeal request to unlock further file access.",
+            "error": f"File access quota limit reached ({quota_used}/{quota_limit} files accessed). Only 15 files are allowed to be accessed during working hours. You must submit an access appeal request to unlock further file access.",
             "quota_exceeded": True,
             "quota_used": quota_used,
             "quota_limit": quota_limit,
