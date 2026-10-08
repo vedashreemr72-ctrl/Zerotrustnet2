@@ -548,14 +548,6 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
           >
             📸 Test Screenshot DLP
           </button>
-          <button 
-            className="zt-btn" 
-            style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.78rem', color: '#fff', border: '1px solid #f59e0b' }} 
-            onClick={handleSimulateUSB}
-            title="Instant presentation demo: Triggers SOC audio chime, floating red toast, and critical USB breach alert"
-          >
-            🔌 Test USB Alert
-          </button>
           <button className="zt-btn" style={{ background: '#ef4444', fontSize: '0.78rem' }} onClick={handleResetSystem}>
             🔄 Reset Live Data Baseline
           </button>
