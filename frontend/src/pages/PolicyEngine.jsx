@@ -280,8 +280,9 @@ export default function PolicyEngine({ token }) {
           <div className="zt-card" style={{ padding: '1rem', fontSize: '0.75rem', color: '#4a6275', lineHeight: '1.8' }}>
             <div style={{ fontWeight: 'bold', color: '#8aafc8', marginBottom: '4px' }}>Available JSON Keys:</div>
             • <code style={{ color: '#00f5ff' }}>"device_known": 0</code> (unregistered device)<br />
+            • <code style={{ color: '#00f5ff' }}>"working_hours": true</code> (restricted during business hours 08:00–18:00)<br />
             • <code style={{ color: '#00f5ff' }}>"off_hours": true</code> (outside 07:00-20:00)<br />
-            • <code style={{ color: '#00f5ff' }}>"downloads_gt": 100</code> (downloads &gt; 100)<br />
+            • <code style={{ color: '#00f5ff' }}>"downloads_gt": 15</code> (download limit threshold)<br />
             • <code style={{ color: '#00f5ff' }}>"failed_logins_gt": 5</code> (failed logins &gt; 5)<br />
             • <code style={{ color: '#00f5ff' }}>"impossible_travel_flag": 1</code> (impossible travel)<br />
             • <code style={{ color: '#00f5ff' }}>"privilege_escalation_flag": 1</code> (privilege changes)<br />

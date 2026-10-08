@@ -271,7 +271,7 @@ export default function App() {
       return (
         <>
           <div style={{ display: activePage === 'dashboard' ? 'block' : 'none' }}>
-            <AdminDashboard token={token} user={user} onLogout={handleLogout} />
+            <AdminDashboard token={token} user={user} onLogout={handleLogout} isActive={activePage === 'dashboard'} />
           </div>
           <div style={{ display: activePage === 'ueba' ? 'block' : 'none' }}>
             <ThreatDetection token={token} />

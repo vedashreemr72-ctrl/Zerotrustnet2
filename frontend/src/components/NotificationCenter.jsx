@@ -118,8 +118,11 @@ export default function NotificationCenter({ token, theme: propTheme }) {
     };
   }, []);
 
+  const isFetchingNotifsRef = useRef(false);
+
   const fetchNotifications = async () => {
-    if (!token) return;
+    if (!token || isFetchingNotifsRef.current || document.hidden) return;
+    isFetchingNotifsRef.current = true;
     try {
       const res = await fetch('/api/admin/notifications', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -156,13 +159,19 @@ export default function NotificationCenter({ token, theme: propTheme }) {
       setNotifications(data);
     } catch (err) {
       // Silent error handling for continuous polling
+    } finally {
+      isFetchingNotifsRef.current = false;
     }
   };
 
-  // Poll notifications every 3.5 seconds
+  // Poll notifications every 10 seconds
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 3500);
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchNotifications();
+      }
+    }, 10000);
     return () => clearInterval(interval);
   }, [token]);
 

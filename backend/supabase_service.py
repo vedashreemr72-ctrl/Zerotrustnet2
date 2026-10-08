@@ -37,30 +37,47 @@ def get_supabase_client():
         logging.warning(f"Could not connect to external Supabase instance: {e}. Falling back to internal engine.")
         return None
 
+import threading
+
 def is_supabase_connected() -> bool:
     return get_supabase_client() is not None
 
-def log_event_to_supabase(audit_data: dict):
-    """
-    Asynchronously or non-blockingly synchronizes an audit log event to Supabase public.security_audit_events table.
-    """
+def _async_insert_event(audit_data):
     sb = get_supabase_client()
     if not sb:
-        return False
+        return
     try:
         sb.table("security_audit_events").insert(audit_data).execute()
-        return True
     except Exception as e:
         logging.debug(f"Supabase sync failed (offline or table not yet migrated): {e}")
+
+def log_event_to_supabase(audit_data: dict):
+    """
+    Non-blockingly synchronizes an audit log event to Supabase in a background thread.
+    """
+    try:
+        t = threading.Thread(target=_async_insert_event, args=(audit_data,), daemon=True)
+        t.start()
+        return True
+    except Exception:
         return False
 
-def sync_session_to_supabase(session_data: dict):
+def _async_sync_session(session_data):
     sb = get_supabase_client()
     if not sb:
-        return False
+        return
     try:
         sb.table("sessions").upsert(session_data).execute()
-        return True
     except Exception as e:
         logging.debug(f"Supabase session sync failed: {e}")
+
+def sync_session_to_supabase(session_data: dict):
+    """
+    Non-blockingly synchronizes session state to Supabase in a background thread.
+    """
+    try:
+        t = threading.Thread(target=_async_sync_session, args=(session_data,), daemon=True)
+        t.start()
+        return True
+    except Exception:
         return False

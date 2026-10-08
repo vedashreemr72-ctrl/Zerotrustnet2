@@ -7,14 +7,23 @@
  */
 
 export async function fetchRealTimeLocation() {
+  if (typeof window !== 'undefined') {
+    const cached = sessionStorage.getItem('ztn_real_loc');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {}
+    }
+  }
+
   // Strategy 1: Try Browser Hardware GPS / Wi-Fi Geolocation
   if (typeof window !== 'undefined' && 'geolocation' in navigator) {
     try {
       const position = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 6000,
-          maximumAge: 60000
+          enableHighAccuracy: false,
+          timeout: 1500,
+          maximumAge: 300000
         });
       });
 
@@ -38,7 +47,7 @@ export async function fetchRealTimeLocation() {
           const country = revData.address?.country || '';
           const postal = revData.address?.postcode || '';
 
-          return {
+          const resObj = {
             success: true,
             address: address,
             city: city,
@@ -51,6 +60,8 @@ export async function fetchRealTimeLocation() {
             accuracy: `${Math.round(accuracy)}m`,
             source: 'Hardware GPS / Wi-Fi Geolocation'
           };
+          sessionStorage.setItem('ztn_real_loc', JSON.stringify(resObj));
+          return resObj;
         }
       } catch (err) {
         console.warn('Reverse geocoding error:', err);
@@ -82,7 +93,7 @@ export async function fetchRealTimeLocation() {
         const postalPart = ipData.postal ? ` - ${ipData.postal}` : '';
         const fullAddr = `${parts.join(', ')}${postalPart}`;
 
-        return {
+        const resObj = {
           success: true,
           address: fullAddr,
           city: ipData.city || '',
@@ -96,6 +107,8 @@ export async function fetchRealTimeLocation() {
           isp: ipData.connection?.isp || ipData.connection?.org || '',
           source: 'Live Network IP Geolocation'
         };
+        sessionStorage.setItem('ztn_real_loc', JSON.stringify(resObj));
+        return resObj;
       }
     }
   } catch (ipErr) {

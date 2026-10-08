@@ -25,6 +25,11 @@ def evaluate_policy(conditions_json, user_metrics):
         elif key == "downloads_gt":
             if int(user_metrics.get("downloads", 0)) <= int(value):
                 return False
+        elif key == "working_hours":
+            hr = int(user_metrics.get("login_time", 9))
+            is_work = (8 <= hr <= 18)
+            if is_work != bool(value):
+                return False
         elif key == "failed_logins_gt":
             if int(user_metrics.get("failed_logins", 0)) <= int(value):
                 return False

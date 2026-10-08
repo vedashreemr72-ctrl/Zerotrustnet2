@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X, UserCheck, UserPlus } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
 import { formatLocalTime, formatShortTime, formatLocalDateTime } from '../utils/timeFormat';
 
-export default function AdminDashboard({ token, user, onLogout }) {
+export default function AdminDashboard({ token, user, onLogout, isActive = true }) {
   const [data, setData] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -39,7 +39,14 @@ export default function AdminDashboard({ token, user, onLogout }) {
     }
   };
 
-  const fetchSOCData = async () => {
+  const isFetchingRef = useRef(false);
+
+  const fetchSOCData = async (force = false) => {
+    if (!token) return;
+    if (isFetchingRef.current) return;
+    if (!force && (document.hidden || isActive === false)) return;
+
+    isFetchingRef.current = true;
     try {
       const [dashRes, empRes, sessRes, notifRes, devRes, liveRes, mfaRes, trustDevRes, appealRes, regRes] = await Promise.all([
         fetch('/api/admin/dashboard', { headers: { 'Authorization': `Bearer ${token}` } }),
@@ -91,14 +98,20 @@ export default function AdminDashboard({ token, user, onLogout }) {
       setError(err.message);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   };
 
   useEffect(() => {
-    fetchSOCData();
-    const interval = setInterval(fetchSOCData, 2000);
+    if (isActive === false) return;
+    fetchSOCData(true);
+    const interval = setInterval(() => {
+      if (!document.hidden && isActive !== false) {
+        fetchSOCData();
+      }
+    }, 10000);
     return () => clearInterval(interval);
-  }, [token]);
+  }, [token, isActive]);
 
   const triggerStepUp = (action) => {
     setPendingAction(action);
@@ -175,7 +188,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
       setStepUpModalOpen(false);
       setPendingAction(null);
-      fetchSOCData();
+      fetchSOCData(true);
     } catch (err) {
       setStepUpError(err.message);
     } finally {
@@ -208,7 +221,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Test alert failed');
       setActionMsg(`🔌 ${resData.message}`);
-      fetchSOCData();
+      fetchSOCData(true);
     } catch (err) {
       setActionMsg(`❌ ${err.message}`);
     }
@@ -228,7 +241,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
       if (!res.ok) throw new Error(resData.error || 'Failed to update appeal');
       setActionMsg(`✅ ${resData.message}`);
       setTimeout(() => setActionMsg(''), 4000);
-      fetchSOCData();
+      fetchSOCData(true);
     } catch (err) {
       alert(`Appeal Action Error: ${err.message}`);
     }
@@ -248,7 +261,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
       if (!res.ok) throw new Error(resData.error || 'Failed to update registration status');
       setActionMsg(`✅ ${resData.message}`);
       setTimeout(() => setActionMsg(''), 4500);
-      fetchSOCData();
+      fetchSOCData(true);
     } catch (err) {
       alert(`Registration Action Error: ${err.message}`);
     }

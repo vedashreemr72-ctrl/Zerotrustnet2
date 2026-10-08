@@ -53,7 +53,11 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zerotrust.db
 # ── DATABASE LAYER ─────────────────────────────────────────────────────────────
 
 def get_conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
+    return conn
 
 def init_db():
     conn = get_conn()
@@ -436,7 +440,7 @@ USERS_SEED = [
 BEHAVIOR_SEED = {}
 
 DEFAULT_POLICIES = [
-    {"name":"Mass Download Detection","conditions":'{"downloads_gt":100}',"action":"Temporarily Suspend Account","description":"Automatically suspend account when download volume exceeds 100 files in a single session."},
+    {"name":"Working Hours Download Restriction","conditions":'{"downloads_gt":15,"working_hours":true}',"action":"Temporarily Suspend Account","description":"Downloads are restricted to 15 files during working hours (08:00–18:00). Automatically suspend account when download volume exceeds 15 files."},
     {"name":"Privilege Escalation","conditions":'{"privilege_escalation_flag":1}',"action":"Revoke Elevated Privileges + Alert","description":"Immediately revoke elevated privileges and alert the security team when unauthorized privilege escalation is detected."},
     {"name":"Unapproved USB Storage Connected","conditions":'{"usb_usage":1}',"action":"Revoke Removable Storage + Quarantine Session","description":"Block endpoint removable media and alert SOC when unapproved USB flash storage devices are connected."},
     {"name":"Unauthorized Folder Scope Access","conditions":'{"unauthorized_folder_access":true}',"action":"Block Resource Access + Alert SOC","description":"Restrict access when an employee attempts to access directories outside their permitted departmental scope."},
@@ -689,7 +693,11 @@ def ensure_incidents(df):
         violations = []
         if row.get('impossible_travel_flag'): violations.append("Impossible Travel")
         if row.get('privilege_escalation_flag'): violations.append("Privilege Escalation")
-        if row.get('downloads', 0) > 100: violations.append("Mass Download Detection")
+        hr = int(row.get('login_time', 9))
+        if row.get('downloads', 0) > 15 and (8 <= hr <= 18):
+            violations.append("Working Hours Download Restriction")
+        elif row.get('downloads', 0) > 15:
+            violations.append("Working Hours Download Restriction")
         if row.get('genai_upload_mb', 0) > 20: violations.append("GenAI Data Exfiltration")
         if row.get('last_login_days_ago', 0) > 90: violations.append("Dormant Account Reactivation")
         if row.get('credential_sharing_flag'): violations.append("Credential Sharing")
@@ -2647,9 +2655,12 @@ def admin_policies():
         # 2. Privilege Escalation (Insider permission escalation)
         if row.get('privilege_escalation_flag'):
             violations.append({"Policy": "Privilege Escalation", "User": row['name'], "Action": "Revoke Elevated Privileges + Alert"})
-        # 3. Mass Download Detection (Bulk file download before departure)
-        if row.get('downloads', 0) > 100:
-            violations.append({"Policy": "Mass Download Detection", "User": row['name'], "Action": "Temporarily Suspend Account"})
+        # 3. Working Hours Download Restriction (Restricted to 15 files in working hours)
+        hr = int(row.get('login_time', 9))
+        if row.get('downloads', 0) > 15 and (8 <= hr <= 18):
+            violations.append({"Policy": "Working Hours Download Restriction", "User": row['name'], "Action": "Temporarily Suspend Account"})
+        elif row.get('downloads', 0) > 15:
+            violations.append({"Policy": "Working Hours Download Restriction", "User": row['name'], "Action": "Temporarily Suspend Account"})
         # 4. Unauthorized Scope Access (Employee accessing cross-department data)
         expected = str(row.get('expected_folders', '') or '')
         accessed = str(row.get('accessed_folders', '') or '')
@@ -4595,4 +4606,4 @@ except Exception as e:
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
