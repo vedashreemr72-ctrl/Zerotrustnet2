@@ -5,7 +5,7 @@ import {
   FileCheck, Eye, AlertCircle, Layers, MapPin, Navigation,
   Briefcase, CheckSquare, Square, Plus, Trash2, BookOpen, GitBranch, Terminal, 
   Sparkles, Folder, File, Send, Save, Check, Users, Calendar, 
-  Play, Copy, RefreshCw, X, Search, Filter, ShieldCheck, CheckCircle, CameraOff
+  Play, Copy, RefreshCw, X, Search, Filter, ShieldCheck, CheckCircle, CameraOff, HardDrive
 } from 'lucide-react';
 import { fetchRealTimeLocation, syncLiveLocationToBackend } from '../utils/geolocation';
 import { formatLocalTime, formatShortTime, formatLocalDateTime, getRelativeRealTime } from '../utils/timeFormat';
@@ -1284,6 +1284,24 @@ Security Context: Continuous Verification Active (15-file daily quota enforced -
 
               <button
                 className="zt-btn"
+                style={{
+                  padding: '0.45rem 0.85rem',
+                  fontSize: '0.78rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(219, 39, 119, 0.35))',
+                  borderColor: '#ec4899',
+                  color: '#fbcfe8'
+                }}
+                onClick={() => setActiveModal('insert_usb')}
+                title="Connect or simulate USB / Pendrive insertion to test Zero Trust DLP alert"
+              >
+                <HardDrive size={14} /> 🔌 Insert USB / Pendrive
+              </button>
+
+              <button
+                className="zt-btn"
                 style={{ padding: '0.45rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                 onClick={() => setShowTerminalModal(true)}
               >
@@ -2224,6 +2242,115 @@ Security Context: Continuous Verification Active (15-file daily quota enforced -
               </button>
               <button className="zt-btn zt-btn-sec" onClick={() => setActiveModal(null)}>Cancel</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Insert USB / Pendrive Media */}
+      {activeModal === 'insert_usb' && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div className="zt-card" style={{ maxWidth: '500px', width: '100%', padding: '1.75rem', border: '1.5px solid #ec4899', boxShadow: '0 0 35px rgba(236, 72, 153, 0.25)' }}>
+            <div className="zt-section-title" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#f472b6', fontSize: '1.1rem' }}>
+              <HardDrive size={22} color="#ec4899" /> 🔌 Connect USB / Pendrive Storage Media
+            </div>
+            
+            <p style={{ fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '1rem', lineHeight: '1.45' }}>
+              Simulate or attach external removable media (USB flash drive, pendrive, or portable SSD). Under Zero Trust Policy <strong>POL-003 (Removable Storage Lockout)</strong>, external USB media is continuously monitored and flagged to the SOC Admin Dashboard.
+            </p>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const chosenDevice = usbPreset === 'Custom' ? (usbCustomName.trim() || 'Custom External Storage') : usbPreset;
+              const details = `Unregistered USB device connected: ${chosenDevice} [${usbDriveLetter}]`;
+              handleQuickAction('insert_usb', {
+                details: details,
+                device_name: chosenDevice,
+                drive_letter: usbDriveLetter
+              });
+              setActiveModal(null);
+            }}>
+              <div className="zt-input-group" style={{ marginBottom: '0.85rem' }}>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>Select USB / Pendrive Hardware Device:</label>
+                <select 
+                  className="zt-select" 
+                  value={usbPreset} 
+                  onChange={(e) => setUsbPreset(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem', background: 'rgba(15, 23, 42, 0.9)', color: '#f8fafc', border: '1px solid rgba(236, 72, 153, 0.4)', borderRadius: '6px' }}
+                >
+                  <option value="SanDisk Ultra 64GB USB 3.1">SanDisk Ultra 64GB USB 3.1</option>
+                  <option value="Kingston DataTraveler 32GB (USB 3.0)">Kingston DataTraveler 32GB (USB 3.0)</option>
+                  <option value="Samsung BAR Plus 128GB Flash Drive">Samsung BAR Plus 128GB Flash Drive</option>
+                  <option value="Corsair Flash Voyager 64GB">Corsair Flash Voyager 64GB</option>
+                  <option value="HP v236w 32GB Pen Drive">HP v236w 32GB Pen Drive</option>
+                  <option value="Custom">Custom Device / Hardware Scan</option>
+                </select>
+              </div>
+
+              {usbPreset === 'Custom' && (
+                <div className="zt-input-group" style={{ marginBottom: '0.85rem' }}>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>Custom Device Name / Serial:</label>
+                  <input 
+                    type="text" 
+                    className="zt-input" 
+                    value={usbCustomName} 
+                    onChange={(e) => setUsbCustomName(e.target.value)} 
+                    placeholder="e.g. SanDisk Cruzer Blade 16GB"
+                    style={{ width: '100%', padding: '0.55rem' }}
+                    required={usbPreset === 'Custom'}
+                  />
+                </div>
+              )}
+
+              <div className="zt-input-group" style={{ marginBottom: '0.85rem' }}>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>Mount Drive Letter:</label>
+                <select 
+                  className="zt-select" 
+                  value={usbDriveLetter} 
+                  onChange={(e) => setUsbDriveLetter(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem', background: 'rgba(15, 23, 42, 0.9)', color: '#f8fafc', border: '1px solid rgba(236, 72, 153, 0.4)', borderRadius: '6px' }}
+                >
+                  <option value="E: (Removable Disk)">E: (Removable Disk)</option>
+                  <option value="F: (Removable Media)">F: (Removable Media)</option>
+                  <option value="G: (USB Mass Storage)">G: (USB Mass Storage)</option>
+                  <option value="D: (External USB Drive)">D: (External USB Drive)</option>
+                </select>
+              </div>
+
+              {/* Hardware WebUSB Scan helper button */}
+              <div style={{ marginBottom: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(236, 72, 153, 0.08)', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid rgba(236, 72, 153, 0.2)' }}>
+                <div style={{ fontSize: '0.75rem', color: '#fbcfe8' }}>
+                  <span>🔌 Physical WebUSB Hardware Scanner:</span>
+                  {usbHardwareDetected && (
+                    <div style={{ color: '#10b981', fontWeight: 'bold', marginTop: '2px' }}>
+                      Detected: {usbHardwareDetected}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="zt-btn zt-btn-sec"
+                  style={{ fontSize: '0.72rem', padding: '0.3rem 0.6rem', borderColor: '#ec4899', color: '#f472b6' }}
+                  onClick={handleScanPhysicalUsb}
+                  title="Detect plugged-in USB device via browser WebUSB API"
+                >
+                  Scan Hardware USB
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <button 
+                  type="submit" 
+                  className="zt-btn full-width" 
+                  style={{ background: 'linear-gradient(135deg, #ec4899, #db2777)', color: '#fff', fontWeight: 'bold' }} 
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Connecting...' : '🔌 Mount & Simulate USB Insertion'}
+                </button>
+                <button type="button" className="zt-btn zt-btn-sec" onClick={() => setActiveModal(null)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

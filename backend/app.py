@@ -1586,7 +1586,7 @@ def employee_action():
         b_data["usb_usage"] = 1
         is_susp = 1
         risk_contrib = 30
-        warning = None  # Silent detection on employee side: Do not warn the employee that SOC is notified
+        warning = f"⚠️ Zero Trust Policy (POL-003): Unauthorized removable storage detected [{details}]. Endpoint DLP engaged; critical alert dispatched to Admin SOC."
 
         # Immediately create high-priority notification for Admin SOC Dashboard
         nid = str(uuid.uuid4())
@@ -1788,33 +1788,38 @@ def employee_update_location():
         return jsonify({"error": "Invalid location value"}), 400
 
     conn = get_conn()
-    c = conn.cursor()
+    try:
+        c = conn.cursor()
 
-    # Update behavior_data with exact live physical location
-    c.execute("""
-        UPDATE behavior_data 
-        SET last_login_location = CASE WHEN current_login_location IS NOT NULL AND current_login_location != '' AND current_login_location != ? THEN current_login_location ELSE last_login_location END,
-            current_login_location = ?,
-            last_login_days_ago = 0
-        WHERE user_id = ?
-    """, (live_loc, live_loc, uid))
+        # Update behavior_data with exact live physical location
+        c.execute("""
+            UPDATE behavior_data 
+            SET last_login_location = CASE WHEN current_login_location IS NOT NULL AND current_login_location != '' AND current_login_location != ? THEN current_login_location ELSE last_login_location END,
+                current_login_location = ?,
+                last_login_days_ago = 0
+            WHERE user_id = ?
+        """, (live_loc, live_loc, uid))
 
-    # Also update active sessions for this employee
-    c.execute("""
-        UPDATE sessions 
-        SET location = ?
-        WHERE user_id = ? AND is_active = 1
-    """, (live_loc, uid))
+        # Also update active sessions for this employee
+        c.execute("""
+            UPDATE sessions 
+            SET location = ?
+            WHERE user_id = ? AND is_active = 1
+        """, (live_loc, uid))
 
-    # Also update trusted_devices
-    c.execute("""
-        UPDATE trusted_devices 
-        SET last_seen_location = ?
-        WHERE user_id = ?
-    """, (live_loc, uid))
+        # Also update trusted_devices
+        try:
+            c.execute("""
+                UPDATE trusted_devices 
+                SET last_seen_location = ?
+                WHERE user_id = ?
+            """, (live_loc, uid))
+        except Exception as e:
+            logger.warning(f"Failed to update trusted_devices location: {e}")
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
 
     invalidate_eval_cache()
     
@@ -4595,66 +4600,68 @@ def dispatch_usb_insertion_alert(device_name, drive_letter="USB", user_override=
     Inserts notifications, alerts, incidents, and triggers zero-trust DLP enforcement.
     """
     conn = get_conn()
-    c = conn.cursor()
+    try:
+        c = conn.cursor()
 
-    uid, uname, emp_name, emp_dept = "U001", "employee", "Employee", "Engineering"
-    if user_override:
-        c.execute("SELECT id, username, name, department FROM users WHERE username=?", (user_override,))
-        u_row = c.fetchone()
-        if u_row:
-            uid, uname, emp_name, emp_dept = u_row[0], u_row[1], u_row[2], u_row[3]
-    else:
-        c.execute("SELECT user_id, username, department FROM sessions WHERE is_active=1 AND role != 'admin' ORDER BY login_time DESC LIMIT 1")
-        sess = c.fetchone()
-        if sess:
-            uid, uname = sess[0], sess[1]
-            c.execute("SELECT name, department FROM users WHERE id=?", (uid,))
-            u_details = c.fetchone()
-            emp_name = u_details[0] if u_details else uname
-            emp_dept = u_details[1] if u_details else sess[2]
-        else:
-            c.execute("SELECT id, username, name, department FROM users WHERE role != 'admin' LIMIT 1")
+        uid, uname, emp_name, emp_dept = "U001", "employee", "Employee", "Engineering"
+        if user_override:
+            c.execute("SELECT id, username, name, department FROM users WHERE username=?", (user_override,))
             u_row = c.fetchone()
             if u_row:
                 uid, uname, emp_name, emp_dept = u_row[0], u_row[1], u_row[2], u_row[3]
+        else:
+            c.execute("SELECT user_id, username, department FROM sessions WHERE is_active=1 AND role != 'admin' ORDER BY login_time DESC LIMIT 1")
+            sess = c.fetchone()
+            if sess:
+                uid, uname = sess[0], sess[1]
+                c.execute("SELECT name, department FROM users WHERE id=?", (uid,))
+                u_details = c.fetchone()
+                emp_name = u_details[0] if u_details else uname
+                emp_dept = u_details[1] if u_details else sess[2]
+            else:
+                c.execute("SELECT id, username, name, department FROM users WHERE role != 'admin' LIMIT 1")
+                u_row = c.fetchone()
+                if u_row:
+                    uid, uname, emp_name, emp_dept = u_row[0], u_row[1], u_row[2], u_row[3]
 
-    # Update behavior_data
-    c.execute("UPDATE behavior_data SET usb_usage=1 WHERE user_id=?", (uid,))
+        # Update behavior_data
+        c.execute("UPDATE behavior_data SET usb_usage=1 WHERE user_id=?", (uid,))
 
-    # Insert critical notification for Admin Dashboard
-    nid = str(uuid.uuid4())
-    ts = datetime.now().isoformat()
-    notif_subject = f"[CRITICAL] USB INSERTION DETECTED: {emp_name} ({emp_dept})"
-    notif_msg = f"HARDWARE PLUG & PLAY ALERT: Physical USB/Pendrive storage inserted into workstation [{drive_letter} - {device_name}]. Endpoint DLP engaged for employee {emp_name} (@{uname})."
-    c.execute("""
-        INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
-        VALUES (?,?,?,?,?,?,?,?,?,?,0)
-    """, (nid, uid, uname, "Endpoint Hardware DLP", "SOC Admin Team", notif_subject, notif_msg, "Critical", ts, "Dispatched"))
+        # Insert critical notification for Admin Dashboard
+        nid = str(uuid.uuid4())
+        ts = datetime.now().isoformat()
+        notif_subject = f"[CRITICAL] USB INSERTION DETECTED: {emp_name} ({emp_dept})"
+        notif_msg = f"HARDWARE PLUG & PLAY ALERT: Physical USB/Pendrive storage inserted into workstation [{drive_letter} - {device_name}]. Endpoint DLP engaged for employee {emp_name} (@{uname})."
+        c.execute("""
+            INSERT INTO notifications (id, user_id, username, channel, recipient, subject, message, severity, sent_at, status, is_read)
+            VALUES (?,?,?,?,?,?,?,?,?,?,0)
+        """, (nid, uid, uname, "Endpoint Hardware DLP", "SOC Admin Team", notif_subject, notif_msg, "Critical", ts, "Dispatched"))
 
-    # Insert into alerts
-    alt_id = str(uuid.uuid4())
-    alt_code = f"ALT-{int(datetime.now().timestamp()) % 100000}"
-    c.execute("""
-        INSERT INTO alerts (id, alert_code, user_id, user_name, department, priority, alert_title, severity, risk_score, created_at, status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    """, (alt_id, alt_code, uid, emp_name, emp_dept, "P1", f"Physical USB/Pendrive Inserted: {device_name} ({drive_letter})", "Critical", 95, ts, "Active"))
+        # Insert into alerts
+        alt_id = str(uuid.uuid4())
+        alt_code = f"ALT-{int(datetime.now().timestamp()) % 100000}"
+        c.execute("""
+            INSERT INTO alerts (id, alert_code, user_id, user_name, department, priority, alert_title, severity, risk_score, created_at, status)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (alt_id, alt_code, uid, emp_name, emp_dept, "P1", f"Physical USB/Pendrive Inserted: {device_name} ({drive_letter})", "Critical", 95, ts, "Active"))
 
-    # Create/update incident
-    inc_id = f"INC-{int(datetime.now().timestamp()) % 100000}"
-    c.execute("""
-        INSERT INTO incidents 
-        (id, incident_id, user_id, username, user_name, department, created_at, severity, status, summary, evidence, policies_triggered, risk_score, recommendations, resolved_at, resolved_by, notes, assigned_to, resolution) 
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (str(uuid.uuid4()), inc_id, uid, uname, emp_name, emp_dept, ts, "Critical", "Open",
-          f"Hardware USB Endpoint Breach: {emp_name} ({emp_dept}) inserted physical storage {device_name} [{drive_letter}]",
-          json.dumps([f"Physical Hardware Removable Media: {device_name} ({drive_letter})", "Policy POL-003 Violation: Removable Storage Lockout"]),
-          "POL-003: Removable Storage Lockout & Token Revocation",
-          95,
-          json.dumps(["Quarantine workstation endpoint", "Lock endpoint USB controller", "Force re-authentication", "Forensic scan of removable media"]),
-          None, None, "Hardware PnP USB watchdog alert automatically sent to SOC Admin Dashboard.", "SOC Team", ""))
+        # Create/update incident
+        inc_id = f"INC-{int(datetime.now().timestamp()) % 100000}"
+        c.execute("""
+            INSERT INTO incidents 
+            (id, incident_id, user_id, username, user_name, department, created_at, severity, status, summary, evidence, policies_triggered, risk_score, recommendations, resolved_at, resolved_by, notes, assigned_to, resolution) 
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (str(uuid.uuid4()), inc_id, uid, uname, emp_name, emp_dept, ts, "Critical", "Open",
+              f"Hardware USB Endpoint Breach: {emp_name} ({emp_dept}) inserted physical storage {device_name} [{drive_letter}]",
+              json.dumps([f"Physical Hardware Removable Media: {device_name} ({drive_letter})", "Policy POL-003 Violation: Removable Storage Lockout"]),
+              "POL-003: Removable Storage Lockout & Token Revocation",
+              95,
+              json.dumps(["Quarantine workstation endpoint", "Lock endpoint USB controller", "Force re-authentication", "Forensic scan of removable media"]),
+              None, None, "Hardware PnP USB watchdog alert automatically sent to SOC Admin Dashboard.", "SOC Team", ""))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
 
     # Audit log & risk recalculation
     log_audit(uid, uname, emp_name, emp_dept, "Hardware USB Event", f"Physical USB/Pendrive inserted: {device_name} ({drive_letter})", "127.0.0.1", "Physical Workstation Endpoint", 35, 1)
@@ -4803,12 +4810,11 @@ try:
     ensure_incidents(df_init)
     ensure_trusted_devices_seeded()
 
-    # Hardware USB background daemon is disabled on startup to prevent spontaneous notifications
-    # when USB devices / ADB interfaces are present on the host PC. 
-    # USB alerts can be explicitly tested on demand via /api/admin/usb/test-trigger
-    # if sys.platform == 'win32' and winreg:
-    #     usb_thread = threading.Thread(target=usb_hardware_daemon, daemon=True)
-    #     usb_thread.start()
+    # Hardware USB background daemon automatically monitors Windows host for pendrive / USB drive insertions
+    if sys.platform == 'win32' and winreg:
+        usb_thread = threading.Thread(target=usb_hardware_daemon, daemon=True)
+        usb_thread.start()
+        print("[USB HARDWARE DAEMON] Windows plug-and-play USB watchdog thread started successfully.", flush=True)
 except Exception as e:
     print(f"Startup initialization notice: {e}")
 
