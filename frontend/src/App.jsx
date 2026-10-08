@@ -15,6 +15,7 @@ import NotificationCenter from './components/NotificationCenter';
 import GlobalHeader from './components/GlobalHeader';
 import SecurityTelemetry from './components/SecurityTelemetry';
 import DLPProtection from './components/DLPProtection';
+import { fetchRealTimeLocation, syncLiveLocationToBackend } from './utils/geolocation';
 import { formatLocalDateTime, formatShortTime } from './utils/timeFormat';
 
 import { 
@@ -133,6 +134,18 @@ export default function App() {
     document.documentElement.setAttribute('data-site-mode', siteMode);
     localStorage.setItem('ztn_site_mode', siteMode);
   }, [siteMode]);
+
+  // Synchronize authentic live physical location to backend for active user
+  useEffect(() => {
+    if (!token || !user) return;
+    fetchRealTimeLocation().then((loc) => {
+      if (loc && (loc.address || loc.shortLocation)) {
+        syncLiveLocationToBackend(token, loc);
+      }
+    }).catch((err) => {
+      console.warn('Real-time location sync error:', err);
+    });
+  }, [token, user]);
 
   const handleToggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));

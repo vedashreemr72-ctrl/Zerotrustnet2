@@ -7,7 +7,7 @@ import {
   Sparkles, Folder, File, Send, Save, Check, Users, Calendar, 
   Play, Copy, RefreshCw, X, Search, Filter, ShieldCheck, CheckCircle, CameraOff
 } from 'lucide-react';
-import { fetchRealTimeLocation } from '../utils/geolocation';
+import { fetchRealTimeLocation, syncLiveLocationToBackend } from '../utils/geolocation';
 import { formatLocalTime, formatShortTime, formatLocalDateTime, getRelativeRealTime } from '../utils/timeFormat';
 
 export default function EmployeeDashboard({ token, user, onPageChange, onLogout }) {
@@ -26,6 +26,9 @@ export default function EmployeeDashboard({ token, user, onPageChange, onLogout 
     try {
       const loc = await fetchRealTimeLocation();
       setRealLocation(loc);
+      if (token && loc) {
+        syncLiveLocationToBackend(token, loc);
+      }
     } catch (err) {
       console.warn('Failed to load real-time location:', err);
     } finally {

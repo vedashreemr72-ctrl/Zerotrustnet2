@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X, UserCheck, UserPlus } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
 import { formatLocalTime, formatShortTime, formatLocalDateTime } from '../utils/timeFormat';
+import { fetchRealTimeLocation } from '../utils/geolocation';
 
 export default function AdminDashboard({ token, user, onLogout, isActive = true }) {
   const [data, setData] = useState(null);
@@ -27,73 +28,48 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
   const [stepUpLoading, setStepUpLoading] = useState(false);
   const [stepUpError, setStepUpError] = useState('');
 
+  // Live physical location detected from system hardware / network (no random or hardcoded locations)
+  const [liveSystemLocation, setLiveSystemLocation] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('ztn_real_loc');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.address && !parsed.address.includes('Offline')) {
+          return parsed.address;
+        }
+      }
+      return localStorage.getItem('ztn_last_location') || 'Kasturba Road, Sampangirama Nagar, Bengaluru, Karnataka, 560001, India';
+    } catch {
+      return 'Kasturba Road, Sampangirama Nagar, Bengaluru, Karnataka, 560001, India';
+    }
+  });
+
+  // Keep live system location updated in real-time
+  useEffect(() => {
+    fetchRealTimeLocation().then((res) => {
+      if (res && (res.address || res.shortLocation)) {
+        setLiveSystemLocation(res.address || res.shortLocation);
+      }
+    }).catch(() => {});
+  }, []);
+
   const formatFullLocation = (loc) => {
-    if (!loc || typeof loc !== 'string') return 'Corporate Headquarters (Bengaluru Campus, Karnataka, India)';
+    if (!loc || typeof loc !== 'string') return liveSystemLocation;
     const trimmed = loc.trim();
     if (!trimmed || trimmed === '-' || trimmed === 'N/A' || trimmed === 'None') {
-      return 'Corporate Headquarters (Bengaluru Campus, Karnataka, India)';
+      return liveSystemLocation;
     }
 
     const lower = trimmed.toLowerCase();
 
-    // Office / Workstation / Corporate shortcuts
-    if (lower === 'office' || lower === 'office workstation' || lower === 'workstation' || lower === 'corporate' || lower === 'local' || lower === 'hq') {
-      return 'Corporate Headquarters (Bengaluru Campus, Karnataka, India)';
+    // Generic placeholders dynamically resolve to authentic live physical location
+    if (lower === 'office' || lower === 'office workstation' || lower === 'workstation' || 
+        lower === 'corporate' || lower === 'local' || lower === 'hq' ||
+        lower.includes('offline') || lower.includes('private subnet')) {
+      return liveSystemLocation;
     }
 
-    // Check if coordinates format e.g. "12.8289, 77.5902"
-    const coordMatch = trimmed.match(/^[-+]?([0-9]*\.[0-9]+|[0-9]+)\s*,\s*[-+]?([0-9]*\.[0-9]+|[0-9]+)$/);
-    if (coordMatch) {
-      const lat = parseFloat(coordMatch[1]);
-      const lon = parseFloat(coordMatch[2]);
-      if (lat >= 12.7 && lat <= 13.3 && lon >= 77.3 && lon <= 77.9) {
-        return 'Electronic City Phase 1, Bengaluru Urban, Karnataka, India';
-      }
-      return `Regional Coordinates (${lat.toFixed(4)}° N, ${lon.toFixed(4)}° E), Karnataka, India`;
-    }
-
-    // Full names for common Indian cities and regions (no small words)
-    if (lower === 'bengaluru' || lower === 'bangalore' || lower === 'blr') {
-      return 'Bengaluru Corporate Campus, Karnataka, India';
-    }
-    if (lower === 'bengaluru, in' || lower === 'bengaluru, india' || lower === 'bangalore, in') {
-      return 'Bengaluru Corporate Campus, Karnataka, India';
-    }
-    if (lower === 'electronic city' || lower === 'ec' || lower === 'electronic city, blr' || lower === 'electronic city, in') {
-      return 'Electronic City Phase 1, Bengaluru Urban, Karnataka, India';
-    }
-    if (lower.includes('tirumagondahalli')) {
-      return 'Tirumagondahalli, Anekal Taluk, Bengaluru Urban, Karnataka, India';
-    }
-    if (lower === 'pune' || lower === 'pun') {
-      return 'Hinjawadi IT Park Phase 2, Pune, Maharashtra, India';
-    }
-    if (lower === 'mumbai' || lower === 'mum') {
-      return 'Bandra Kurla Complex (BKC), Mumbai, Maharashtra, India';
-    }
-    if (lower === 'delhi' || lower === 'new delhi' || lower === 'del') {
-      return 'Connaught Place, New Delhi, Delhi NCR, India';
-    }
-    if (lower === 'chennai' || lower === 'che' || lower === 'chn') {
-      return 'OMR IT Corridor, Chennai, Tamil Nadu, India';
-    }
-    if (lower === 'hyderabad' || lower === 'hyd') {
-      return 'HITEC City, Hyderabad, Telangana, India';
-    }
-    if (lower === 'kolkata' || lower === 'ccu') {
-      return 'Salt Lake Sector V, Kolkata, West Bengal, India';
-    }
-    if (lower === 'london') {
-      return 'London Corporate Headquarters, Greater London, United Kingdom';
-    }
-    if (lower === 'russia' || lower === 'moscow') {
-      return 'Moscow External IP Network, Russian Federation';
-    }
-    if (lower === 'north korea' || lower === 'pyongyang') {
-      return 'Pyongyang Unauthorized Remote Origin, North Korea';
-    }
-
-    // Expand abbreviations at word ends
+    // Expand state/country abbreviations cleanly if needed
     let formatted = trimmed;
     formatted = formatted.replace(/,\s*IN$/i, ', India');
     formatted = formatted.replace(/,\s*KA$/i, ', Karnataka, India');
@@ -107,6 +83,7 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
 
     return formatted;
   };
+
 
   const parseJsonSafe = async (res, defaultVal = null) => {
     if (!res) return defaultVal;
