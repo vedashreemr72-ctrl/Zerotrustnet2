@@ -461,39 +461,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
         </div>
       </div>
 
-      {/* Real-Time USB / Pendrive / Smartphone Endpoint Insertion Alert Banner (Visible Across All Tabs) */}
-      {usbAlerts.length > 0 && (
-        <div className="usb-alert-banner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div className="usb-alert-icon">
-              🔌
-            </div>
-            <div>
-              <div className="usb-alert-title">
-                <span>🚨 IMMEDIATE CRITICAL ALERT: USB / PENDRIVE INSERTION DETECTED</span>
-                <span className="zt-badge bc" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>CRITICAL ENDPOINT</span>
-              </div>
-              <div className="usb-alert-message">
-                {usbAlerts[0].message}
-              </div>
-              <div className="usb-alert-meta">
-                <span className="usb-alert-target">Target: <strong>{usbAlerts[0].username}</strong></span>
-                <span className="usb-alert-channel">Channel: <strong>{usbAlerts[0].channel}</strong></span>
-                <span className="usb-alert-reported">Reported: <strong>{formatLocalDateTime(usbAlerts[0].sent_at)}</strong></span>
-                <span className="usb-alert-status">Status: <strong>{usbAlerts[0].status}</strong></span>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.6rem' }}>
-            <button 
-              className="usb-alert-btn" 
-              onClick={() => setActiveTab('notifications')}
-            >
-              <PhoneCall size={14} /> View Dispatches ({usbAlerts.length})
-            </button>
-          </div>
-        </div>
-      )}
+
 
       {activeTab === 'overview' && (
         <>
