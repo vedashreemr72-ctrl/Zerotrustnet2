@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sun, Moon, Shield, Lock, Smartphone, Laptop, AlertTriangle, CheckCircle, RefreshCw, KeyRound, Globe, MapPin } from 'lucide-react';
+import { isSupabaseConfigured, supabase } from '../supabaseClient';
 import { fetchRealTimeLocation } from '../utils/geolocation';
 
 const detectBrowser = () => {
