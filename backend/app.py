@@ -1844,23 +1844,43 @@ def get_live_system_location():
     # 1. Reverse-geocode if coordinates provided
     if lat and lon:
         try:
-            url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+            url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&zoom=18&addressdetails=1"
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=4) as response:
+            with urllib.request.urlopen(req, timeout=5) as response:
                 res = json.loads(response.read().decode('utf-8'))
                 if res.get('display_name'):
-                    addr = res['display_name']
                     addr_data = res.get('address', {})
+                    # Build clean, accurate, and deduplicated street address
+                    parts = [
+                        addr_data.get('building') or addr_data.get('amenity') or addr_data.get('house_name'),
+                        (f"{addr_data.get('house_number')}, " if addr_data.get('house_number') else '') + (addr_data.get('road') or ''),
+                        addr_data.get('neighbourhood') or addr_data.get('suburb') or addr_data.get('quarter'),
+                        addr_data.get('city_district'),
+                        addr_data.get('city') or addr_data.get('town') or addr_data.get('village') or addr_data.get('municipality') or 'Bengaluru',
+                        addr_data.get('state') or 'Karnataka',
+                        addr_data.get('postcode'),
+                        addr_data.get('country') or 'India'
+                    ]
+                    clean_parts = []
+                    for p in parts:
+                        p_str = str(p or '').strip()
+                        if p_str and not any(p_str.lower() == c.lower() for c in clean_parts):
+                            clean_parts.append(p_str)
+                    
+                    full_formatted_addr = ", ".join(clean_parts) if len(clean_parts) >= 3 else res['display_name']
                     city = addr_data.get('city') or addr_data.get('town') or addr_data.get('village') or addr_data.get('suburb') or 'Bengaluru'
                     state = addr_data.get('state') or 'Karnataka'
                     country = addr_data.get('country') or 'India'
+                    
                     return jsonify({
                         "success": True,
-                        "address": addr,
+                        "address": full_formatted_addr,
+                        "raw_display_name": res['display_name'],
                         "shortLocation": f"{city}, {state}, {country}",
                         "city": city,
                         "state": state,
                         "country": country,
+                        "postal": addr_data.get('postcode', ''),
                         "latitude": float(lat),
                         "longitude": float(lon),
                         "source": "Hardware GPS / Wi-Fi Geolocation"
