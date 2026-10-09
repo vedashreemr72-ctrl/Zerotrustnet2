@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Users, FileText, AlertTriangle, Landmark, TrendingUp, Lock, Unlock, PhoneCall, Laptop, Activity, HardDrive, ExternalLink, MapPin, Globe, Navigation, X, UserCheck, UserPlus, CameraOff, RefreshCw, BarChart3 } from 'lucide-react';
 import SecurityTrendGraph from '../components/SecurityTrendGraph';
 import { formatLocalTime, formatShortTime, formatLocalDateTime } from '../utils/timeFormat';
-import { fetchRealTimeLocation, setCustomLocation, clearCustomLocation } from '../utils/geolocation';
+import { fetchRealTimeLocation } from '../utils/geolocation';
 
 export default function AdminDashboard({ token, user, onLogout, isActive = true }) {
   const [data, setData] = useState(null);
@@ -31,10 +31,6 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
   // Live physical location detected from system hardware / network (no random or hardcoded locations)
   const [liveSystemLocation, setLiveSystemLocation] = useState(() => {
     try {
-      const custom = localStorage.getItem('ztn_user_custom_location');
-      if (custom && custom.trim() && !custom.includes('Kasturba Road')) {
-        return custom.trim();
-      }
       const cached = sessionStorage.getItem('ztn_real_loc');
       if (cached) {
         const parsed = JSON.parse(cached);
@@ -53,8 +49,6 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
   });
 
   const [isDetectingLoc, setIsDetectingLoc] = useState(false);
-  const [showLocModal, setShowLocModal] = useState(false);
-  const [customLocInput, setCustomLocInput] = useState('');
 
   // Refresh live location on load and on demand
   const handleRefreshLocation = async (force = true) => {
@@ -63,24 +57,11 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
       const res = await fetchRealTimeLocation(force);
       if (res && (res.address || res.shortLocation)) {
         setLiveSystemLocation(res.address || res.shortLocation);
-        setActionMsg(`📍 Live location resolved: ${res.address || res.shortLocation} (${res.source || 'Verified'})`);
-        setTimeout(() => setActionMsg(''), 5000);
       }
     } catch (err) {
       console.warn('Location detection failed:', err);
     } finally {
       setIsDetectingLoc(false);
-    }
-  };
-
-  const handleSaveCustomLocation = (newLoc) => {
-    if (!newLoc || !newLoc.trim()) return;
-    const res = setCustomLocation(newLoc.trim());
-    if (res) {
-      setLiveSystemLocation(res.address);
-      setShowLocModal(false);
-      setActionMsg(`✅ Location calibrated to: ${res.address}`);
-      setTimeout(() => setActionMsg(''), 5000);
     }
   };
 
@@ -601,25 +582,6 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
                 <MapPin size={12} color="#00f5ff" />
                 <span>{isDetectingLoc ? 'Detecting GPS...' : (liveSystemLocation.length > 30 ? liveSystemLocation.slice(0, 30) + '...' : liveSystemLocation)}</span>
                 <RefreshCw size={11} color="#38bdf8" style={isDetectingLoc ? { animation: 'spin 1s linear infinite' } : {}} />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCustomLocInput(liveSystemLocation);
-                  setShowLocModal(true);
-                }}
-                title="Manually calibrate or verify workstation location"
-                style={{
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  color: '#94a3b8',
-                  padding: '4px 8px',
-                  borderRadius: '16px',
-                  fontSize: '0.72rem',
-                  cursor: 'pointer'
-                }}
-              >
-                ✏️ Calibrate
               </button>
             </div>
           </div>
@@ -2028,93 +1990,6 @@ export default function AdminDashboard({ token, user, onLogout, isActive = true 
               >
                 Close
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Workstation Location Calibration Modal */}
-      {showLocModal && (
-        <div className="zt-modal-overlay" onClick={() => setShowLocModal(false)}>
-          <div className="zt-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="zt-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', color: '#00f5ff' }}>
-                <MapPin size={18} />
-                <span>Calibrate SOC Workstation Location</span>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setShowLocModal(false)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ padding: '1.2rem' }}>
-              <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem', lineHeight: '1.4' }}>
-                Detect your physical address automatically via HTML5 Geolocation, or manually enter your verified workplace / city address if hardware GPS is unavailable.
-              </p>
-
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleRefreshLocation(true);
-                    setShowLocModal(false);
-                  }}
-                  disabled={isDetectingLoc}
-                  className="zt-btn"
-                  style={{ flex: 1, padding: '0.55rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                >
-                  <Navigation size={14} />
-                  <span>Auto-Detect Live GPS</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearCustomLocation();
-                    handleRefreshLocation(true);
-                    setShowLocModal(false);
-                  }}
-                  className="zt-btn zt-btn-sec"
-                  style={{ padding: '0.55rem', fontSize: '0.82rem' }}
-                  title="Reset to live auto-detected coordinates"
-                >
-                  Reset
-                </button>
-              </div>
-
-              <div className="zt-input-group" style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.8rem', color: '#e2e8f0', marginBottom: '4px', display: 'block' }}>Verified Workstation Address or City</label>
-                <input
-                  type="text"
-                  className="zt-input"
-                  value={customLocInput}
-                  onChange={(e) => setCustomLocInput(e.target.value)}
-                  placeholder="e.g. Bengaluru, Karnataka, India"
-                  style={{ width: '100%' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button
-                  type="button"
-                  className="zt-btn zt-btn-sec"
-                  onClick={() => setShowLocModal(false)}
-                  style={{ fontSize: '0.82rem', padding: '0.45rem 1rem' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="zt-btn"
-                  onClick={() => handleSaveCustomLocation(customLocInput)}
-                  style={{ fontSize: '0.82rem', padding: '0.45rem 1rem' }}
-                >
-                  Save Calibrated Location
-                </button>
-              </div>
             </div>
           </div>
         </div>

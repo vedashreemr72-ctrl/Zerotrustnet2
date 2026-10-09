@@ -157,21 +157,6 @@ export async function reverseGeocodeCoords(lat, lon) {
  * Fetch real-time physical location
  */
 export async function fetchRealTimeLocation(forceRefresh = false) {
-  // Check user-set custom override first (takes highest priority if user calibrated)
-  if (typeof window !== 'undefined') {
-    const custom = localStorage.getItem('ztn_user_custom_location');
-    if (custom && custom.trim() && !isInvalidCachedAddress(custom)) {
-      const customObj = {
-        success: true,
-        address: custom.trim(),
-        shortLocation: custom.trim(),
-        city: custom.trim().split(',')[0].trim(),
-        source: 'User Calibrated Location'
-      };
-      return customObj;
-    }
-  }
-
   // Return cached result if valid, has street-level details, and not forcing refresh
   if (!forceRefresh && typeof window !== 'undefined') {
     const cached = sessionStorage.getItem('ztn_real_loc');
@@ -179,8 +164,7 @@ export async function fetchRealTimeLocation(forceRefresh = false) {
       try {
         const parsed = JSON.parse(cached);
         if (parsed && parsed.address && !isInvalidCachedAddress(parsed.address)) {
-          // If cached address has street-level accuracy or custom calibration, return it
-          if (parsed.address.includes(',') || parsed.source?.includes('GPS') || parsed.source?.includes('Calibrated')) {
+          if (parsed.address.includes(',') || parsed.source?.includes('GPS')) {
             return parsed;
           }
         }
@@ -315,39 +299,6 @@ export async function fetchRealTimeLocation(forceRefresh = false) {
   return fallbackObj;
 }
 
-/**
- * Allows user to calibrate/save their verified actual location
- */
-export function setCustomLocation(customAddress) {
-  if (!customAddress || !customAddress.trim()) return;
-  const trimmed = customAddress.trim();
-  try {
-    localStorage.setItem('ztn_user_custom_location', trimmed);
-    localStorage.setItem('ztn_last_location', trimmed);
-    const customObj = {
-      success: true,
-      address: trimmed,
-      shortLocation: trimmed,
-      city: trimmed.split(',')[0].trim(),
-      source: 'User Calibrated Location'
-    };
-    sessionStorage.setItem('ztn_real_loc', JSON.stringify(customObj));
-    return customObj;
-  } catch (e) {
-    console.warn('Failed to save custom location:', e);
-  }
-}
-
-/**
- * Clears custom location override and forces fresh detection
- */
-export function clearCustomLocation() {
-  try {
-    localStorage.removeItem('ztn_user_custom_location');
-    localStorage.removeItem('ztn_last_location');
-    sessionStorage.removeItem('ztn_real_loc');
-  } catch (e) {}
-}
 
 /**
  * Synchronizes client's live physical location with backend database

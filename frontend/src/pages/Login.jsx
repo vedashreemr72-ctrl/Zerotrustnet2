@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sun, Moon, Shield, Lock, Smartphone, Laptop, AlertTriangle, CheckCircle, RefreshCw, KeyRound, Globe, MapPin } from 'lucide-react';
-import { isSupabaseConfigured, supabase } from '../supabaseClient';
-import { fetchRealTimeLocation, setCustomLocation } from '../utils/geolocation';
+import { fetchRealTimeLocation } from '../utils/geolocation';
 
 const detectBrowser = () => {
   const ua = navigator.userAgent;
@@ -56,10 +55,6 @@ export default function Login({
   // Simulation & telemetry toggles
   const [simLocation, setSimLocation] = useState(() => {
     try {
-      const custom = localStorage.getItem('ztn_user_custom_location');
-      if (custom && custom.trim() && !custom.includes('Kasturba Road')) {
-        return custom.trim();
-      }
       const last = localStorage.getItem('ztn_last_location');
       if (last && !last.includes('Kasturba Road') && !last.includes('Offline')) {
         return last;
@@ -70,8 +65,6 @@ export default function Login({
     }
   });
   const [simDeviceId, setSimDeviceId] = useState(getDeviceId());
-  const [isEditingLoc, setIsEditingLoc] = useState(false);
-  const [locInputVal, setLocInputVal] = useState('');
   const [isLocLoading, setIsLocLoading] = useState(false);
 
   const refreshLocation = async (force = true) => {
@@ -507,7 +500,7 @@ export default function Login({
             <div>• <strong>Device ID:</strong> <span style={{ color: '#00f5ff' }}>{simDeviceId}</span></div>
             <div>• <strong>Browser:</strong> <span style={{ color: '#10b981' }}>{browserName}</span></div>
             <div>• <strong>OS:</strong> <span style={{ color: '#10b981' }}>{osName}</span></div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 onClick={() => refreshLocation(true)}
@@ -516,33 +509,14 @@ export default function Login({
                   background: 'rgba(0, 245, 255, 0.1)',
                   border: '1px solid rgba(0, 245, 255, 0.3)',
                   color: '#00f5ff',
-                  padding: '2px 6px',
+                  padding: '2px 8px',
                   borderRadius: '4px',
                   fontSize: '0.68rem',
                   cursor: 'pointer'
                 }}
-                title="Detect GPS location from device"
+                title="Refresh verified live location"
               >
-                📍 Detect GPS
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLocInputVal(simLocation === 'Detecting location...' ? '' : simLocation);
-                  setIsEditingLoc(!isEditingLoc);
-                }}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  color: '#94a3b8',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  fontSize: '0.68rem',
-                  cursor: 'pointer'
-                }}
-                title="Manually set location"
-              >
-                ✏️ Edit
+                🔄 Refresh
               </button>
             </div>
             <div style={{ gridColumn: 'span 2' }}>
@@ -550,33 +524,6 @@ export default function Login({
               <span style={{ color: '#10b981', fontWeight: '600' }}>{isLocLoading ? 'Detecting...' : simLocation}</span>
             </div>
           </div>
-
-          {isEditingLoc && (
-            <div style={{ marginTop: '8px', padding: '6px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', display: 'flex', gap: '4px' }}>
-              <input
-                type="text"
-                className="zt-input"
-                value={locInputVal}
-                onChange={(e) => setLocInputVal(e.target.value)}
-                placeholder="e.g. Bengaluru, Karnataka, India"
-                style={{ flex: 1, padding: '3px 6px', fontSize: '0.72rem' }}
-              />
-              <button
-                type="button"
-                className="zt-btn"
-                style={{ padding: '3px 8px', fontSize: '0.7rem' }}
-                onClick={() => {
-                  if (locInputVal.trim()) {
-                    setCustomLocation(locInputVal.trim());
-                    setSimLocation(locInputVal.trim());
-                    setIsEditingLoc(false);
-                  }
-                }}
-              >
-                Save
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
