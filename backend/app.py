@@ -1880,17 +1880,6 @@ def get_live_system_location():
                 if ip_data.get('postal'):
                     full_addr += f" - {ip_data['postal']}"
                 
-                if ip_lat and ip_lon:
-                    try:
-                        nom_url = f"https://nominatim.openstreetmap.org/reverse?lat={ip_lat}&lon={ip_lon}&format=json"
-                        nom_req = urllib.request.Request(nom_url, headers=headers)
-                        with urllib.request.urlopen(nom_req, timeout=4) as nom_resp:
-                            nom_data = json.loads(nom_resp.read().decode('utf-8'))
-                            if nom_data.get('display_name'):
-                                full_addr = nom_data['display_name']
-                    except Exception:
-                        pass
-
                 return jsonify({
                     "success": True,
                     "address": full_addr,
@@ -1911,7 +1900,7 @@ def get_live_system_location():
     # 3. Verified environment address fallback
     return jsonify({
         "success": True,
-        "address": "Kasturba Road, Sampangirama Nagar, Bengaluru, Karnataka, 560001, India",
+        "address": "Bengaluru, Karnataka, India",
         "shortLocation": "Bengaluru, Karnataka, India",
         "city": "Bengaluru",
         "state": "Karnataka",

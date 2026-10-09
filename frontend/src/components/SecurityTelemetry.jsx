@@ -3,7 +3,7 @@ import {
   Shield, CheckCircle2, Navigation, MapPin, Key, Clock, 
   Cpu, AlertTriangle, RefreshCw, Laptop, Smartphone, FileText
 } from 'lucide-react';
-import { fetchRealTimeLocation } from '../utils/geolocation';
+import { fetchRealTimeLocation, setCustomLocation, clearCustomLocation } from '../utils/geolocation';
 import { formatLocalTime, formatShortTime, formatLocalDateTime } from '../utils/timeFormat';
 
 export default function SecurityTelemetry({ token, user, initialData }) {
@@ -11,12 +11,14 @@ export default function SecurityTelemetry({ token, user, initialData }) {
   const [loading, setLoading] = useState(!initialData);
   const [realLocation, setRealLocation] = useState(null);
   const [locLoading, setLocLoading] = useState(true);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibInput, setCalibInput] = useState('');
 
   // Load real-time GPS location
-  const loadRealLocation = async () => {
+  const loadRealLocation = async (force = true) => {
     setLocLoading(true);
     try {
-      const loc = await fetchRealTimeLocation();
+      const loc = await fetchRealTimeLocation(force);
       setRealLocation(loc);
     } catch (err) {
       console.warn('Failed to load real-time location:', err);
@@ -226,7 +228,7 @@ export default function SecurityTelemetry({ token, user, initialData }) {
               </span>
               <button 
                 type="button" 
-                onClick={loadRealLocation}
+                onClick={() => loadRealLocation(true)}
                 disabled={locLoading}
                 className="zt-btn zt-btn-sec"
                 style={{
@@ -238,8 +240,68 @@ export default function SecurityTelemetry({ token, user, initialData }) {
               >
                 {locLoading ? 'Detecting...' : '🔄 Refresh Live Location'}
               </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setCalibInput(realLocation?.address || '');
+                  setIsCalibrating(!isCalibrating);
+                }}
+                className="zt-btn zt-btn-sec"
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.76rem',
+                  cursor: 'pointer'
+                }}
+              >
+                ✏️ Calibrate
+              </button>
             </div>
           </div>
+
+          {isCalibrating && (
+            <div style={{ marginTop: '8px', marginBottom: '8px', padding: '10px', background: 'rgba(0, 245, 255, 0.05)', border: '1px solid rgba(0, 245, 255, 0.25)', borderRadius: '6px' }}>
+              <div style={{ fontSize: '0.78rem', color: '#e2e8f0', marginBottom: '6px', fontWeight: 'bold' }}>
+                Manually Enter Verified Location (City / Workplace):
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  className="zt-input"
+                  value={calibInput}
+                  onChange={(e) => setCalibInput(e.target.value)}
+                  placeholder="e.g. Bengaluru, Karnataka, India"
+                  style={{ flex: 1, fontSize: '0.82rem', padding: '5px 10px' }}
+                />
+                <button
+                  type="button"
+                  className="zt-btn"
+                  style={{ fontSize: '0.78rem', padding: '5px 12px' }}
+                  onClick={() => {
+                    if (calibInput.trim()) {
+                      const saved = setCustomLocation(calibInput.trim());
+                      if (saved) setRealLocation(saved);
+                      setIsCalibrating(false);
+                    }
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="zt-btn zt-btn-sec"
+                  style={{ fontSize: '0.78rem', padding: '5px 10px' }}
+                  onClick={() => {
+                    clearCustomLocation();
+                    loadRealLocation(true);
+                    setIsCalibrating(false);
+                  }}
+                >
+                  Reset to GPS
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: '6px', fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: '1.45', background: 'var(--bg-card)', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
             <strong style={{ color: 'var(--accent-cyan)' }}>Real-Time Physical Address:</strong>{' '}
