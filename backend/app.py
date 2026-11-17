@@ -4287,6 +4287,334 @@ def employee_file_access():
         "message": f"File operation '{operation}' recorded. Sensitivity classification: {classification}."
     })
 
+def build_workspace_file_content(filename, user_info):
+    fname_lower = filename.lower()
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+    uid = user_info.get("user_id", "EMP-UNKNOWN")
+    name = user_info.get("name", "Employee")
+    dept = user_info.get("department", "Engineering")
+    sid = user_info.get("session_id", "SESS-SECURE")
+    token_stamp = hashlib.sha256(f"{uid}_{filename}_{now_str}".encode()).hexdigest()[:16]
+
+    if fname_lower.endswith('.pdf'):
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+        )
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'WTDocTitle',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=16,
+            leading=20,
+            textColor=colors.HexColor('#0f172a'),
+            spaceAfter=4
+        )
+        subtitle_style = ParagraphStyle(
+            'WTDocSubTitle',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor('#0284c7'),
+            spaceAfter=10
+        )
+        h2_style = ParagraphStyle(
+            'WTSectionHeader',
+            parent=styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=11,
+            leading=15,
+            textColor=colors.HexColor('#0f172a'),
+            spaceBefore=8,
+            spaceAfter=4
+        )
+        body_style = ParagraphStyle(
+            'WTBodyText',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            leading=13,
+            textColor=colors.HexColor('#334155')
+        )
+
+        story = []
+        doc_display_name = filename.replace('_', ' ').replace('.pdf', '')
+        story.append(Paragraph(f"ZeroTrustNet Secure Document Vault: {doc_display_name}", title_style))
+        story.append(Paragraph(f"CLASSIFIED ENTERPRISE ASSET · WATERMARKED COPY FOR {name.upper()}", subtitle_style))
+        story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284c7'), spaceAfter=10))
+
+        # Metadata table
+        meta_data = [
+            [Paragraph("<b>File Name:</b>", body_style), Paragraph(filename, body_style), Paragraph("<b>Classification:</b>", body_style), Paragraph("<b>CONFIDENTIAL</b>", body_style)],
+            [Paragraph("<b>Recipient:</b>", body_style), Paragraph(f"{name} ({uid})", body_style), Paragraph("<b>Department:</b>", body_style), Paragraph(dept, body_style)],
+            [Paragraph("<b>Cryptographic Stamp:</b>", body_style), Paragraph(f"sha256:{token_stamp}...", body_style), Paragraph("<b>Released At:</b>", body_style), Paragraph(now_str, body_style)],
+        ]
+        meta_table = Table(meta_data, colWidths=[120, 230, 120, 230])
+        meta_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(meta_table)
+        story.append(Spacer(1, 10))
+
+        if 'architecture' in fname_lower or 'spec' in fname_lower:
+            story.append(Paragraph("1. Executive Overview & Scope", h2_style))
+            story.append(Paragraph("This technical blueprint specifies the next-generation microsegmentation architecture for ZeroTrustNet services. In accordance with zero-trust principles, all network perimeters are assumed hostile. Access decisions are continuously evaluated using contextual session telemetry, hardware identifiers, and real-time risk scores.", body_style))
+            story.append(Spacer(1, 6))
+
+            story.append(Paragraph("2. Mutual TLS & Identity Attestation", h2_style))
+            story.append(Paragraph("All intra-cluster communication channels mandate mutual TLS (mTLS) with ephemeral cryptographic credentials issued by SPIFFE/SPIRE agents. Certificates rotate every 15 minutes. Unauthenticated network hops are automatically dropped at the eBPF packet filter level.", body_style))
+            story.append(Spacer(1, 6))
+
+            story.append(Paragraph("3. Data Loss Prevention (DLP) & File Quotas", h2_style))
+            story.append(Paragraph("Outbound transfers must not exceed the enterprise quota limit of 15 file operations per 24 hours during working hours (only 15 files are allowed to access). Egress files undergo deep content inspection and cryptographic watermarking before delivery.", body_style))
+            story.append(Spacer(1, 6))
+
+            story.append(Paragraph("4. Audit & Incident Response Escalation", h2_style))
+            story.append(Paragraph("Any non-compliant file access or abnormal surge in download volume triggers immediate SOC high-severity incident generation, session rate limiting, and administrative review.", body_style))
+        elif 'policy' in fname_lower:
+            story.append(Paragraph("1. Policy Directive 2026-SEC-01: Principle of Least Privilege", h2_style))
+            story.append(Paragraph("ZeroTrustNet personnel are provisioned with the absolute minimum access required to execute their active sprint assignments. Blanket network access is strictly prohibited across all business units.", body_style))
+            story.append(Spacer(1, 6))
+
+            story.append(Paragraph("2. Directive 2026-SEC-02: Daily File Quota Enforcement", h2_style))
+            story.append(Paragraph("Standard employee sessions are restricted to a maximum of 15 file operations per working day (only 15 files are allowed to access). Any additional file operations require formal administrative appeal approval from the SOC supervisor.", body_style))
+            story.append(Spacer(1, 6))
+
+            story.append(Paragraph("3. Directive 2026-SEC-03: Continuous Authentication & Step-Up MFA", h2_style))
+            story.append(Paragraph("Suspicious logins, new devices, or anomalous locations immediately prompt step-up TOTP challenges. Unverified sessions are quarantined within 30 seconds.", body_style))
+        elif 'onboarding' in fname_lower or 'handbook' in fname_lower:
+            story.append(Paragraph("Section A: Initial Client Verification & DNS Handshake", h2_style))
+            story.append(Paragraph("Enterprise client onboarding begins with cryptographic verification of domain ownership using DNS TXT record challenge responses and automated certificate validation.", body_style))
+            story.append(Spacer(1, 6))
+
+            story.append(Paragraph("Section B: Identity Federation & Single Sign-On (SAML/OIDC)", h2_style))
+            story.append(Paragraph("Connect client identity providers (Okta, Azure AD, Ping) using standard OpenID Connect / SAML 2.0 assertions with enforced hardware-bound security keys.", body_style))
+            story.append(Spacer(1, 6))
+
+            story.append(Paragraph("Section C: SOC Escalation Path & 24/7 Response", h2_style))
+            story.append(Paragraph("In the event of anomalous activity or unauthorized file access, client security teams are automatically alerted via the ZeroTrustNet webhook stream.", body_style))
+        else:
+            story.append(Paragraph("Executive Overview & Secure Content", h2_style))
+            story.append(Paragraph(f"This document represents verified enterprise collateral released from the ZeroTrustNet secure vault for authorized employee {name} ({dept}). All access events have been recorded into the immutable SOC audit log.", body_style))
+            story.append(Spacer(1, 6))
+            story.append(Paragraph("Confidentiality Notice", h2_style))
+            story.append(Paragraph("Unauthorized reproduction, transfer, or dissemination outside of approved corporate boundaries is strictly prohibited and subject to automated DLP monitoring.", body_style))
+
+        story.append(Spacer(1, 14))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#cbd5e1'), spaceBefore=8, spaceAfter=6))
+        footer_text = f"Tamper-Evident Security Seal | Stamp: sha256:{token_stamp} | Recipient: {name} ({uid}) | Session: {sid}"
+        footer_style = ParagraphStyle('WTFooter', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8, textColor=colors.HexColor('#64748b'), alignment=1)
+        story.append(Paragraph(footer_text, footer_style))
+
+        doc.build(story)
+        return buffer.getvalue(), 'application/pdf'
+
+    elif fname_lower.endswith('.sql'):
+        sql_content = f"""-- =============================================================================
+-- ZeroTrustNet Enterprise Data Platform - Schema Migration
+-- Document: {filename}
+-- Authorized User: {name} ({dept}) | ID: {uid}
+-- Generated: {now_str}
+-- Verification Stamp: sha256:{token_stamp}
+-- =============================================================================
+
+BEGIN TRANSACTION;
+
+-- 1. User Identity & Audit Review Tracking
+ALTER TABLE users ADD COLUMN approval_status TEXT DEFAULT 'Approved';
+ALTER TABLE users ADD COLUMN reviewed_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN reviewed_by TEXT;
+CREATE INDEX IF NOT EXISTS idx_users_approval ON users(approval_status);
+
+-- 2. Daily File Access Quota Ledger (15-File Policy Limit)
+CREATE TABLE IF NOT EXISTS file_quota_ledger (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    classification TEXT NOT NULL,
+    operation TEXT DEFAULT 'Download',
+    file_size_mb REAL DEFAULT 2.5,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_quota_user_ts ON file_quota_ledger(user_id, timestamp);
+
+-- 3. Policy Enforcement Metadata
+CREATE TABLE IF NOT EXISTS zero_trust_policy_rules (
+    rule_id TEXT PRIMARY KEY,
+    rule_name TEXT NOT NULL,
+    max_daily_quota INTEGER DEFAULT 15,
+    enforcement_action TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1
+);
+
+INSERT OR IGNORE INTO zero_trust_policy_rules (rule_id, rule_name, max_daily_quota, enforcement_action)
+VALUES ('POL-001', 'Standard Working Hours File Limit', 15, 'Block & Require Formal Appeal');
+
+COMMIT;
+"""
+        return sql_content.encode('utf-8'), 'text/plain; charset=utf-8'
+
+    elif fname_lower.endswith('.json'):
+        json_obj = {
+            "openapi": "3.1.0",
+            "info": {
+                "title": "ZeroTrustNet Core Enterprise API",
+                "version": "5.0.0",
+                "description": f"Microservice contract specification extracted for {name} ({dept})",
+                "extracted_at": now_str,
+                "cryptographic_stamp": f"sha256:{token_stamp}"
+            },
+            "servers": [
+                { "url": "http://127.0.0.1:5000", "description": "Local Secure Gateway" }
+            ],
+            "paths": {
+                "/api/employee/file-access": {
+                    "post": {
+                        "summary": "Check Quota and Record File Operation",
+                        "description": "Enforces 15-file daily quota restriction during working hours.",
+                        "responses": {
+                            "200": { "description": "Operation allowed and recorded in SOC audit" },
+                            "403": { "description": "15-File daily operational quota exceeded" }
+                        }
+                    }
+                },
+                "/api/employee/workspace-file/download": {
+                    "get": {
+                        "summary": "Download Workspace Vault Document",
+                        "responses": {
+                            "200": { "description": "Binary file stream with cryptographic watermark" }
+                        }
+                    }
+                }
+            }
+        }
+        return json.dumps(json_obj, indent=2).encode('utf-8'), 'application/json'
+
+    elif fname_lower.endswith('.xlsx') or fname_lower.endswith('.csv'):
+        csv_content = f"""Category,Subcategory,Q1 Actual ($),Q2 Actual ($),Q3 Projected ($),Full Year Forecast ($),Zero Trust Allocation,Status
+Cybersecurity Infrastructure,Cloud Perimeter & Microsegmentation,120000,145000,155000,580000,Primary Enclave,Approved
+Security Operations Center,Continuous UEBA & ML Detection,85000,92000,98000,370000,Active Telemetry,Approved
+Identity & Access Management,Hardware Keys & TOTP Multi-Factor,32000,28000,35000,125000,Authentication,Approved
+Compliance & Audit,Third-Party ISO 27001 Certification,45000,15000,50000,135000,Governance,In Review
+Endpoint Security,EDR Agents & USB Hardware Watchdog,60000,64000,68000,260000,Host Defense,Approved
+Total Enterprise Security Spend,,342000,344000,406000,1470000,100% Zero Trust,Committed
+
+# Cryptographic Watermark: sha256:{token_stamp}
+# Authorized Recipient: {name} ({dept}) | Generated: {now_str}
+"""
+        return csv_content.encode('utf-8'), 'text/csv; charset=utf-8'
+
+    elif fname_lower.endswith('.zip'):
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("README.md", f"# ZeroTrustNet Archive: {filename}\nAuthorized User: {name} ({dept})\nGenerated: {now_str}\n")
+            zf.writestr("audit_manifest.json", json.dumps({"filename": filename, "recipient": name, "timestamp": now_str, "stamp": token_stamp}, indent=2))
+        return zip_buf.getvalue(), 'application/zip'
+
+    else:
+        text_content = f"""=============================================================================
+ZeroTrustNet Secure Document Vault
+Document: {filename}
+Authorized Recipient: {name} ({dept}) [ID: {uid}]
+Session ID: {sid}
+Released: {now_str}
+Verification Stamp: sha256:{token_stamp}
+=============================================================================
+
+This document has been released from the ZeroTrustNet Secure Enclave.
+All read and transfer activities are tracked in compliance with NIST SP 800-207.
+"""
+        return text_content.encode('utf-8'), 'text/plain; charset=utf-8'
+
+@app.route('/api/employee/workspace-file/download', methods=['GET', 'POST'])
+def employee_download_workspace_file():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        token = request.args.get("token", "")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        uid = payload["user_id"]
+        uname = payload["username"]
+        name = payload["name"]
+        dept = payload["department"]
+        sid = payload.get("session_id", str(uuid.uuid4()))
+        ip = payload.get("ip", request.remote_addr or "127.0.0.1")
+        device = payload.get("device", "Workstation")
+    except Exception:
+        return jsonify({"error": "Invalid or missing token"}), 401
+
+    is_allowed, quota_used, quota_limit, has_pending = check_user_file_quota(uid)
+    if not is_allowed:
+        return jsonify({
+            "error": f"File access quota limit reached ({quota_used}/{quota_limit} files accessed). Only 15 files are allowed to be accessed during working hours. You must submit an access appeal request to unlock further file access.",
+            "quota_exceeded": True,
+            "quota_used": quota_used,
+            "quota_limit": quota_limit,
+            "has_pending_appeal": has_pending
+        }), 403
+
+    filename = request.args.get("filename")
+    if not filename and request.is_json and request.json:
+        filename = request.json.get("filename")
+    if not filename:
+        filename = "Sprint_24_Architecture_Spec.pdf"
+
+    # Determine classification
+    fname_lower = filename.lower()
+    if "schema" in fname_lower or "database" in fname_lower:
+        classification = "Restricted"
+    elif "policy" in fname_lower or "spec" in fname_lower or "forecast" in fname_lower or "financial" in fname_lower or "salary" in fname_lower or "titan" in fname_lower:
+        classification = "Confidential"
+    else:
+        classification = "Internal"
+
+    is_flagged = 1 if classification in ["Confidential", "Secret", "Restricted"] and dept not in ["IT Security", "Legal", "Executive"] else 0
+    policy_action = "Allowed" if not is_flagged else "Logged & Step-Up MFA Flagged"
+
+    fid = str(uuid.uuid4())
+    now_ts = datetime.now().isoformat()
+
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO file_access_logs (id, user_id, username, filename, filepath, classification, operation, file_size_mb, timestamp, is_flagged, policy_action) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (fid, uid, uname, filename, f"/workspace/vault/{filename}", classification, "Download", 2.5, now_ts, is_flagged, policy_action)
+    )
+    conn.execute("UPDATE behavior_data SET downloads = downloads + 1, file_access_count = file_access_count + 1 WHERE user_id=?", (uid,))
+    if classification in ["Confidential", "Secret", "Restricted"]:
+        conn.execute("UPDATE behavior_data SET sensitive_files = sensitive_files + 1 WHERE user_id=?", (uid,))
+    conn.commit()
+    conn.close()
+
+    log_audit(uid, uname, name, dept, "File Download", f"Downloaded '{filename}' [{classification}] from Workspace Vault", ip, device, 15 if is_flagged else 0, is_flagged, session_id=sid)
+
+    invalidate_eval_cache()
+    df_fresh = load_all_evaluated()
+    ensure_incidents(df_fresh)
+
+    file_bytes, mimetype = build_workspace_file_content(filename, {
+        "user_id": uid,
+        "username": uname,
+        "name": name,
+        "department": dept,
+        "session_id": sid
+    })
+
+    return send_file(
+        io.BytesIO(file_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype=mimetype
+    )
+
 @app.route('/api/employee/file-access/history', methods=['GET'])
 def employee_file_access_history():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")

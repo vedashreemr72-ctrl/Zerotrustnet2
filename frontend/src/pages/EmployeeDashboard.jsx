@@ -431,43 +431,82 @@ Security Context: Continuous Verification Active (15-file daily quota enforced -
   const [previewDoc, setPreviewDoc] = useState(null);
   const [activeSprintModal, setActiveSprintModal] = useState(null);
 
-  // File access helper connecting workspace downloads to the 10-file quota
+  // File access helper connecting workspace downloads to the 15-file quota
   const handleWorkspaceFileAccess = async (docItem, op = 'Download') => {
     setActionLoading(true);
     setActionAlert({ type: '', msg: '' });
     try {
-      const res = await fetch('/api/employee/file-access', {
-        method: 'POST',
+      const res = await fetch(`/api/employee/workspace-file/download?filename=${encodeURIComponent(docItem.filename)}`, {
+        method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          filename: docItem.filename,
-          classification: docItem.classification,
-          operation: op,
-          file_size_mb: docItem.sizeMb || 2.5
-        })
+        }
       });
 
-      const resData = await res.json();
       if (!res.ok) {
-        if (resData.quota_exceeded) {
+        let resData = {};
+        try {
+          resData = await res.json();
+        } catch {
+          // ignore
+        }
+        if (res.status === 403 && resData.quota_exceeded) {
           setShowAppealModal(true);
           fetchAppeals();
           setActionAlert({ type: 'error', msg: `⛔ Quota Reached: ${resData.error} (Only 15 files are allowed to access). Please appeal for access.` });
           return;
         }
-        throw new Error(resData.error || 'File access failed');
+        throw new Error(resData.error || `File access failed (${res.status})`);
       }
 
-      if (resData.is_flagged) {
-        setShowStepUpModal(true);
-      }
+      // Obtain file blob and trigger native browser file download
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      downloadLink.download = docItem.filename;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      window.URL.revokeObjectURL(blobUrl);
 
-      setActionAlert({ type: resData.is_flagged ? 'warning' : 'success', msg: `📥 File accessed: ${docItem.filename} (${resData.message})` });
+      setActionAlert({ type: 'success', msg: `📥 Successfully downloaded ${docItem.filename} (${docItem.sizeMb || 2.5} MB) to your device!` });
       fetchDashboardData();
     } catch (err) {
+      if (!err.message.includes('Quota')) {
+        try {
+          const fallbackContent = [
+            `=============================================================================`,
+            `ZeroTrustNet Enterprise Vault - ${docItem.filename}`,
+            `Classification: ${docItem.classification}`,
+            `Department: ${docItem.department || user.department}`,
+            `Author: ${docItem.author || 'Security Admin'}`,
+            `Size: ${docItem.sizeMb} MB`,
+            `Downloaded by: ${user.name} (${user.email || user.username})`,
+            `Date: ${new Date().toLocaleString()}`,
+            `=============================================================================`,
+            ``,
+            `SUMMARY:`,
+            docItem.summary || '',
+            ``,
+            `CONTENT PREVIEW:`,
+            ...(docItem.contentPreview || [])
+          ].join('\n');
+          const fallbackBlob = new Blob([fallbackContent], { type: 'text/plain;charset=utf-8' });
+          const fallbackUrl = window.URL.createObjectURL(fallbackBlob);
+          const fallbackLink = document.createElement('a');
+          fallbackLink.href = fallbackUrl;
+          fallbackLink.download = docItem.filename.replace(/\.pdf$|\.xlsx$/, '.txt');
+          document.body.appendChild(fallbackLink);
+          fallbackLink.click();
+          fallbackLink.remove();
+          window.URL.revokeObjectURL(fallbackUrl);
+          setActionAlert({ type: 'warning', msg: `📥 File downloaded with fallback: ${docItem.filename}` });
+          return;
+        } catch {
+          // ignore
+        }
+      }
       setActionAlert({ type: 'error', msg: err.message });
     } finally {
       setActionLoading(false);
@@ -920,6 +959,27 @@ Security Context: Continuous Verification Active (15-file daily quota enforced -
 
       if (resData.is_flagged) {
         setShowStepUpModal(true);
+      }
+
+      if (fileOp === 'Download') {
+        try {
+          const dlRes = await fetch(`/api/employee/workspace-file/download?filename=${encodeURIComponent(selectedFile)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (dlRes.ok) {
+            const blob = await dlRes.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const dlLink = document.createElement('a');
+            dlLink.href = blobUrl;
+            dlLink.download = selectedFile;
+            document.body.appendChild(dlLink);
+            dlLink.click();
+            dlLink.remove();
+            window.URL.revokeObjectURL(blobUrl);
+          }
+        } catch {
+          // ignore download trigger error
+        }
       }
 
       setActionAlert({ type: resData.is_flagged ? 'warning' : 'success', msg: resData.message });
@@ -1523,11 +1583,12 @@ Security Context: Continuous Verification Active (15-file daily quota enforced -
                         </button>
                         <button
                           className="zt-btn"
-                          style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
                           onClick={() => handleWorkspaceFileAccess(doc)}
                           disabled={actionLoading}
+                          title={`Download ${doc.filename}`}
                         >
-                          <Download size={13} /> Access
+                          <Download size={13} /> Access / Download
                         </button>
                       </div>
                     </td>

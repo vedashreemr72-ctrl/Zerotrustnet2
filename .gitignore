@@ -29,3 +29,8 @@ backend/uploads/
 
 # Scratch & debug scripts
 scratch/
+
+# SQLite WAL and temporary files
+*.db-shm
+*.db-wal
+*.db-journal
